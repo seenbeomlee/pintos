@@ -56,6 +56,9 @@ start_process (void *file_name_)
   struct intr_frame if_;
   bool success;
 
+  int size = strlen(file_name);
+  char* cmd_name[size + 1]; // 왜냐하면, size는 문자열의 길이이므로 '\0'을 삽입하기 위해서는 +1을 해주어야 한다.
+
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
@@ -63,16 +66,17 @@ start_process (void *file_name_)
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
 
-  /* 로드에 성공하면, argument parsing을 진행한다. */
+  /* 파일 로드에 성공하면, argument parsing을 진행한다. */
   if (success) {
 
   }
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  if (!success) 
+  if (!success) {
     thread_exit ();
-
+  }
+  
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
@@ -95,6 +99,7 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
+  timer_msleep(500);
   return -1;
 }
 
@@ -470,4 +475,13 @@ install_page (void *upage, void *kpage, bool writable)
      address, then map our page there. */
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
+}
+
+void parse_filename(char *src, char *dest) {
+    int i = 0;
+    while (src[i] != '\0' && src[i] != ' ') {
+        dest[i] = src[i];
+        i++;
+    }
+    dest[i] = '\0';
 }
