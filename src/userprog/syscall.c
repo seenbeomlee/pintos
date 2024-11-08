@@ -53,6 +53,7 @@ syscall_handler (struct intr_frame *f)
 void 
 exit (int status) 
 {
+  printf("%s: exit(%d)\n", thread_name(), status);
   thread_exit ();
 }
 
