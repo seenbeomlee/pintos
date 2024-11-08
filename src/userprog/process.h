@@ -8,4 +8,9 @@ int process_wait (tid_t);
 void process_exit (void);
 void process_activate (void);
 
+void parse_filename(char *src, char *dest);
+void setting_esp(char* file_name, void** esp);
+int parse_argc(char* file_name);
+void parse_argv(char** argv, int argc, char* file_name);
+
 #endif /* userprog/process.h */

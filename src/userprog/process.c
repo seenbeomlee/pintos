@@ -57,26 +57,30 @@ start_process (void *file_name_)
   bool success;
 
   int size = strlen(file_name);
-  char* cmd_name[size + 1]; // 왜냐하면, size는 문자열의 길이이므로 '\0'을 삽입하기 위해서는 +1을 해주어야 한다.
+  char* first_word_of_file_name[size + 1]; // 왜냐하면, size는 문자열의 길이이므로 '\0'을 삽입하기 위해서는 +1을 해주어야 한다.
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
 
-  /* 파일 로드에 성공하면, argument parsing을 진행한다. */
+  parse_filename(file_name, first_word_of_file_name);
+  success = load (first_word_of_file_name, &if_.eip, &if_.esp);
+
+  /* 파일 로드에 성공하면, setting_esp 을 진행한다. */
   if (success) {
-
+    // printf("successed!\n");
+    setting_esp(file_name, &if_.esp);
   }
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success) {
+    // printf("not successed!\n");
     thread_exit ();
   }
-  
+
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
@@ -477,11 +481,117 @@ install_page (void *upage, void *kpage, bool writable)
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
 
-void parse_filename(char *src, char *dest) {
+void 
+parse_filename(char *src, char *dest)
+{
     int i = 0;
     while (src[i] != '\0' && src[i] != ' ') {
         dest[i] = src[i];
         i++;
     }
     dest[i] = '\0';
+}
+
+void 
+setting_esp(char* file_name, void** esp)
+{
+  char** argv;
+
+  int i = 0;
+  int argc = 0;
+
+  argc = parse_argc(file_name);
+  argv = (char** )malloc(sizeof(char* ) * argc);
+  parse_argv(argv, argc, file_name);
+
+ /*
+• argv[2][...]
+• argv[1][...]
+• argv[0][...]
+• <word-align> -- 데이터의 접근 속도를 빠르게 하기 위해서 4의 배수로 맞춘다.
+• NULL * 포인터
+• argv[2] * 포인터
+• argv[1] * 포인터
+• argv[0] * 포인터
+• argv **
+• argc int
+• return address
+ */
+
+  init_esp(argv, argc, esp);
+  free(argv);
+}
+
+int
+parse_argc(char* file_name) {
+  char* token;
+  char* next_ptr;
+  int argc = 0;
+
+  char* dest_file_name[strlen(file_name) + 1];
+  strlcpy(dest_file_name, file_name, strlen(file_name) + 1);
+
+  token = strtok_r(dest_file_name, " ", &next_ptr);
+
+  while (token != NULL)
+  {
+    argc++;
+    token = strtok_r(NULL, " ", &next_ptr);
+  }
+
+  return argc;
+}
+
+void
+parse_argv(char** argv, int argc, char* file_name) {
+  char* token;
+  char* next_ptr;
+
+  int i = 0;
+
+  char* dest_file_name[strlen(file_name) + 1];
+  strlcpy(dest_file_name, file_name, strlen(file_name) + 1);
+
+  for(token = strtok_r(dest_file_name, " ", &next_ptr); i < argc; i++, token = strtok_r(NULL, " ", &next_ptr)) {
+    argv[i] = token;
+  }
+}
+
+void init_esp(char** argv, char* argc, void** esp) {
+  int i = 0;
+  int argv_len = 0;
+  int sum_argv_len = 0;
+  /* push argv[argc-1] ~ argv[0] */
+  for (i = argc; i > 0; i--) {
+    argv_len = strlen(argv[i-1]); // argc = 3이면 argv[2]부터 넣는다.
+    *esp = *esp - (argv_len + 1);
+    sum_argv_len = sum_argv_len + (argv_len + 1);
+    strlcpy(*esp, argv[i-1], argv_len + 1);
+    argv[i-1] = *esp;
+  }
+
+  /* push word align */
+  if (sum_argv_len % 4 != 0) *esp -= 4 - (sum_argv_len % 4);
+
+  /* push NULL */
+  *esp -= 4;
+  **(uint32_t **)esp = 0;
+
+  /* push address of argv[argc-1] ~ argv[0] */
+  for (i = argc - 1; i >= 0; i--) {
+    *esp -= 4;
+    **(uint32_t **)esp = argv[i];
+  }
+
+  /* push address of argv */
+  *esp -= 4;
+  **(uint32_t **)esp = *esp + 4;
+
+  /* push argc */
+  *esp -= 4;
+  **(uint32_t **)esp = argc;
+  
+  /* push return address */
+  *esp -= 4;
+  **(uint32_t **)esp = 0;
 }
