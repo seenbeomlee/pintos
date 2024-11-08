@@ -63,6 +63,11 @@ start_process (void *file_name_)
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
 
+  /* 로드에 성공하면, argument parsing을 진행한다. */
+  if (success) {
+
+  }
+
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success) 
@@ -428,6 +433,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
+/* esp (stack pointer)를 세팅하는 함수이다. */
 static bool
 setup_stack (void **esp) 
 {
