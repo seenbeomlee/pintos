@@ -64,6 +64,18 @@ exit (int status)
   thread_exit ();
 }
 
+pid_t
+exec(const char *cmd_line) 
+{
+  process_execute(cmd_line);
+}
+
+int
+wait(pid_t pid)
+{
+  process_wait(pid);
+}
+
 int 
 write (int fd, const void *buffer, unsigned size) 
 {
