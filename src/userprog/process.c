@@ -523,6 +523,11 @@ setting_esp(char* file_name, void** esp)
  */
 
   init_esp(argv, argc, esp);
+  // 이것을 안하면 메모리 누수가 발생할텐데, 하면 테스트가 fail됨.. parse_argv에서 동적할당을 안하고 할 수는 없나?
+  // free_argv(argv, argc);
+  // for (int i = 0; i < argc; i++) {
+  //   free(argv[i]); // 각 토큰에 대한 메모리 해제
+  // }
   free(argv);
 }
 
@@ -553,12 +558,15 @@ parse_argv(char** argv, int argc, char* file_name) {
 
   int i = 0;
 
-  char* dest_file_name[strlen(file_name) + 1];
+  char* dest_file_name = malloc(strlen(file_name) + 1);
   strlcpy(dest_file_name, file_name, strlen(file_name) + 1);
 
   for(token = strtok_r(dest_file_name, " ", &next_ptr); i < argc; i++, token = strtok_r(NULL, " ", &next_ptr)) {
-    argv[i] = token;
+    argv[i] = malloc(strlen(token) + 1);
+    strlcpy(argv[i], token, strlen(token) + 1);
   }
+
+  free(dest_file_name);
 }
 
 void init_esp(char** argv, char* argc, void** esp) {
@@ -599,3 +607,10 @@ void init_esp(char** argv, char* argc, void** esp) {
   *esp -= 4;
   **(uint32_t **)esp = 0;
 }
+
+// void free_argv(char** argv, int argc) {
+//   for (int i = 0; i < argc; i++) {
+//     free(argv[i]); // 각 토큰에 대한 메모리 해제
+//   }
+//   free(argv);
+// }
