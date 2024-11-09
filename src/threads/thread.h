@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "threads/synch.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -17,6 +18,7 @@ enum thread_status
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
 typedef int tid_t;
+typedef int pid_t;
 #define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
 
 /* Thread priorities. */
@@ -96,7 +98,19 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
-    int exit_status;
+    int exit_status;                    /* exit 호출 시 종료 상태 */
+
+    /* parent thread */
+    struct thread* parent_thread_pointer;
+    /* child list element */
+    struct list_elem child_thread_list_elem;
+    /* child list */
+    struct list child_threads_list;
+
+    /* exit semaphore, 자식 프로세스 종료 대기를 위한 세마포어 */
+    struct semaphore exit_sema;
+    /* wait semaphore, 자식 프로세스 생성 대기 */
+    struct semaphore wait_sema;
 #endif
 
     /* Owned by thread.c. */
@@ -138,5 +152,7 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+struct thread* find_child_process(pid_t pid);
 
 #endif /* threads/thread.h */
