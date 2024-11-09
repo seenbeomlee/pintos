@@ -467,6 +467,23 @@ init_thread (struct thread *t, const char *name, int priority)
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
+
+#ifdef USERPROG
+  /**
+   * t라는 thread를 초기화 시키는 init_thread function은
+   * thread t의 부모 thread인 running thread()가 실행하게 된다.
+   * 따라서, running thread()의 child로는 t와 t의 자식들을 넣어주고,
+   * t의 parent_thread로는 running thread()를 넣어준다.
+   */
+  sema_init(&(t->exit_sema), 0);
+  sema_init(&(t->wait_sema), 0);
+
+  list_init(&(t->child_threads_list));
+
+  struct thread* parent_thread = running_thread();
+  list_push_back(&(parent_thread->child_threads_list), &(t->child_thread_list_elem));
+  t->parent_thread_pointer = running_thread();  
+#endif
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
@@ -582,3 +599,9 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+struct thread*
+find_child_process(tid_t tid)
+{
+
+}
