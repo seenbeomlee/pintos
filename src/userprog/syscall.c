@@ -80,7 +80,22 @@ wait(pid_t pid)
 int 
 read(int fd, void *buffer, unsigned int size)
 {
+  if (fd == 0) {  // 0(stdin) -> keyboard로 직접 입력
+    int i = 0;  // 쓰레기 값 return 방지
+    char c;
+    unsigned char *buf = buffer;
 
+    for (; i < size; i++) {
+      c = input_getc();
+      *buf++ = c;
+      if (c == '\0')
+        break;
+    }
+    return i;
+  }
+  else {
+    return -1;
+  }
 }
 
 int 
