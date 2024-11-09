@@ -59,8 +59,9 @@ void
 exit (int status) 
 {
   /* document의 요구사항에 따라, 스레드가 종료될 때에는 종료 메세지를 출력한다. */
-  printf("%s: exit(%d)\n", thread_name(), status);
-  thread_current()->exit_status = status;
+  struct thread* t = thread_current();
+  t->exit_status = status;
+  printf("%s: exit(%d)\n", thread_name(), t->exit_status);
   thread_exit ();
 }
 
@@ -74,6 +75,12 @@ int
 wait(pid_t pid)
 {
   process_wait(pid);
+}
+
+int 
+read(int fd, void *buffer, unsigned int size)
+{
+
 }
 
 int 
