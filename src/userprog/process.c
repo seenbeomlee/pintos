@@ -30,8 +30,11 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
 tid_t
 process_execute (const char *file_name) 
 {
-  char *fn_copy, *parsed_fn;;
+  char *fn_copy;
   tid_t tid;
+
+  int size = strlen(file_name);
+  char* parsed_fn[size + 1]; // 왜냐하면, size는 문자열의 길이이므로 '\0'을 삽입하기 위해서는 +1을 해주어야 한다.
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
@@ -40,8 +43,9 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+  parse_filename(file_name, parsed_fn);
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (parsed_fn, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
   return tid;
@@ -57,7 +61,7 @@ start_process (void *file_name_)
   bool success;
 
   int size = strlen(file_name);
-  char* first_word_of_file_name[size + 1]; // 왜냐하면, size는 문자열의 길이이므로 '\0'을 삽입하기 위해서는 +1을 해주어야 한다.
+  char* parsed_fn[size + 1]; // 왜냐하면, size는 문자열의 길이이므로 '\0'을 삽입하기 위해서는 +1을 해주어야 한다.
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -65,8 +69,8 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
 
-  parse_filename(file_name, first_word_of_file_name);
-  success = load (first_word_of_file_name, &if_.eip, &if_.esp);
+  parse_filename(file_name, parsed_fn);
+  success = load (parsed_fn, &if_.eip, &if_.esp);
 
   /* 파일 로드에 성공하면, setting_esp 을 진행한다. */
   if (success) {
