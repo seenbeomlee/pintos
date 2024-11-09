@@ -21,4 +21,6 @@ void seek(int fd, unsigned int position);
 unsigned int tell(int fd);
 void close(int fd);
 
+void check_address(void* vaddr);
+
 #endif /* userprog/syscall.h */

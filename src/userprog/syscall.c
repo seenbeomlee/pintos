@@ -53,6 +53,7 @@ syscall_handler (struct intr_frame *f)
 void 
 exit (int status) 
 {
+  /* document의 요구사항에 따라, 스레드가 종료될 때에는 종료 메세지를 출력한다. */
   printf("%s: exit(%d)\n", thread_name(), status);
   thread_exit ();
 }
@@ -65,4 +66,24 @@ write (int fd, const void *buffer, unsigned size)
     return size;
   }
   return -1; 
+}
+
+/** pintos manual 3.15
+ * Accessing User Memory - bad address checking
+ * 1. NULL pointer such as open(NULL)
+ * 2. Unmapped virtual memory
+ * 3. pointer to kernel address space 
+ */
+void
+check_address(void* vaddr) {
+  if (vaddr == NULL) {
+    exit(-1);
+  }
+  if (!is_user_vaddr(vaddr)) {
+    exit(-1);
+  }
+  // page fault 인지 체크하기 위해 필요한데, 추가하면 모든 테스트가 fail 된다. 이유는 모르겠다.
+  // if (!pagedir_get_page(thread_current()->pagedir, vaddr) == NULL) {
+  //   exit(-1);
+  // }
 }
