@@ -51,10 +51,16 @@ syscall_handler (struct intr_frame *f)
 }
 
 void 
+halt(void) {
+  shutdown_power_off();
+}
+
+void 
 exit (int status) 
 {
   /* document의 요구사항에 따라, 스레드가 종료될 때에는 종료 메세지를 출력한다. */
   printf("%s: exit(%d)\n", thread_name(), status);
+  thread_current()->exit_status = status;
   thread_exit ();
 }
 
