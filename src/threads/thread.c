@@ -601,7 +601,27 @@ allocate_tid (void)
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
 struct thread*
-find_child_process(tid_t tid)
+find_child_thread(tid_t tid_child)
 {
+  struct list_elem* child_elem;
+  // thread_current가 parent thread가 된다.
+  struct list* child_list = &(thread_current()->child_threads_list);
 
+  // 부모의 child_list를 순회하면서, tid_child == tid인 child thread가 있는지 확인한다.
+  return iterate_list(child_elem, child_list, tid_child);
+}
+
+struct thread*
+iterate_list(struct list_elem* elem, struct list* list, tid_t tid)
+{
+  struct thread* thread_to_find = NULL;
+
+  for(elem = list_begin(list); elem != list_end (list); elem = list_next(list)) {
+    thread_to_find = list_entry(elem, struct thread, child_thread_list_elem);
+    if(thread_to_find->tid == tid) {
+      return thread_to_find;
+    }
+  }
+
+  return NULL;
 }

@@ -152,6 +152,7 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
-struct thread* find_child_process(tid_t tid);
+struct thread* find_child_thread(tid_t tid);
+struct thread* iterate_list(struct list_elem* elem, struct list* list, tid_t tid);
 
 #endif /* threads/thread.h */
