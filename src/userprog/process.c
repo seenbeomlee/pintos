@@ -107,16 +107,16 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  struct thread* t = thread_current();
   struct list_elem* elem;
   int child_exit_status = -1;
 
   struct thread* child_thread = find_child_thread(child_tid);
+
   if(child_thread == NULL) {
     return child_exit_status;
   }
   else {
-    sema_down(&(t->exit_sema));
+    sema_down(&(child_thread->exit_sema));
     child_exit_status = child_thread->exit_status;
     /** 
      * child_thread의 exit_status를 받기 위해서, child thread의 memory를 삭제하는 단계를 child thread_exit() 시가 아니라,
