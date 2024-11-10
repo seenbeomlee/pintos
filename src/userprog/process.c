@@ -107,8 +107,24 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  timer_msleep(500);
-  return -1;
+  struct thread* t = thread_current();
+  struct list_elem* elem;
+  int child_exit_status = -1;
+
+  struct thread* child_thread = find_child_thread(child_tid);
+  if(child_thread == NULL) {
+    return child_exit_status;
+  }
+  else {
+    sema_down(&(t->exit_sema));
+    child_exit_status = child_thread->exit_status;
+    /** 
+     * child_thread의 exit_status를 받기 위해서, child thread의 memory를 삭제하는 단계를 child thread_exit() 시가 아니라,
+     * 부모의 process_wait()가 재개된 시점으로 한다.. 맞나?
+     */
+    list_remove(&(child_thread->child_thread_list_elem));
+    return child_exit_status;
+  }
 }
 
 /* Free the current process's resources. */
