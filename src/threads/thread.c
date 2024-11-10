@@ -620,7 +620,7 @@ iterate_list(struct list_elem* elem, struct list* list, tid_t tid)
 {
   struct thread* thread_to_find = NULL;
 
-  for(elem = list_begin(list); elem != list_end (list); elem = list_next(list)) {
+  for(elem = list_begin(list); elem != list_end (list); elem = list_next(elem)) {
     thread_to_find = list_entry(elem, struct thread, child_thread_list_elem);
     if(thread_to_find->tid == tid) {
       return thread_to_find;
