@@ -82,13 +82,13 @@ exit (int status)
 pid_t
 exec(const char *cmd_line) 
 {
-  process_execute(cmd_line);
+  return process_execute(cmd_line);
 }
 
 int
 wait(pid_t pid)
 {
-  process_wait(pid);
+  return process_wait(pid);
 }
 
 int 
