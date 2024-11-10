@@ -290,8 +290,12 @@ thread_exit (void)
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
   intr_disable ();
-  list_remove (&thread_current()->allelem);
-  thread_current ()->status = THREAD_DYING;
+  struct thread* t = thread_current ();
+  list_remove (&t->allelem);
+  if (t->parent_thread_pointer != NULL) { // 현재 종료시키는 thread의 parent thread가 있다면, 부모 thread의 wait를 중단시킨다.
+    sema_up(&(t->exit_sema));
+  }
+  t->status = THREAD_DYING;
   schedule ();
   NOT_REACHED ();
 }
