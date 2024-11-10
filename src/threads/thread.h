@@ -152,6 +152,11 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
+/** 2
+ * hierarchical process structure
+ * 현재 프로세스의 자식 리스트를 검색하여 해당 tid에 맞는 process descriptor를 반환한다.
+ * tid를 갖는 프로세스 디스크립터가 존재하지 않을 경우 NULL을 반환한다.
+ */
 struct thread* find_child_thread(tid_t tid);
 struct thread* iterate_list(struct list_elem* elem, struct list* list, tid_t tid);
 
