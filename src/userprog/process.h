@@ -14,4 +14,6 @@ int parse_argc(char* file_name);
 void parse_argv(char** argv, int argc, char* file_name);
 void free_argv(char** argv, int argc);
 
+void process_file_close(int fd_idx);
+
 #endif /* userprog/process.h */

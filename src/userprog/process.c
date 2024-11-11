@@ -167,6 +167,15 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
+/**
+ * 0 ; STDIN
+ * 1 ; STDOUT
+ * 2 ; STDERR
+ */
+  for(int i = 3; i < FDTABLE_SIZE; i++) {
+    process_file_close(i); // syscall close에서 fd를 받아 단일 파일을 close하는 동작이 필요하므로, 불가피하게 캡슐화
+  }
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -665,3 +674,18 @@ void init_esp(char** argv, char* argc, void** esp) {
 //   }
 //   free(argv);
 // }
+
+void process_file_close(int fd_idx) {
+  struct thread* t = thread_current();
+
+  // process_exit에서는 애초에 for문에서 걸러져서 들어오지만, close syscall에서는 fd를 받아 단일 파일에 대해 수행하므로, 검토 조건 필요하다.
+  if(fd_idx < 3 || fd_idx >= FDTABLE_SIZE) {
+    return;
+  }
+
+  if(t->fd_table[fd_idx] != NULL) {
+    file_close(t->fd_table[fd_idx]);
+  }
+
+  return;
+}

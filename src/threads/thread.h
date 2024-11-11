@@ -25,6 +25,9 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+/* file descriptor table size*/
+#define FDTABLE_SIZE 256
+
 /* A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -110,6 +113,8 @@ struct thread
     struct semaphore exit_sema;
     /* wait semaphore, 자식 프로세스 생성 대기 */
     struct semaphore wait_sema;
+
+    struct file* fd_table[FDTABLE_SIZE];    
 #endif
 
     /* Owned by thread.c. */
