@@ -167,6 +167,15 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
+/**
+ * 0 ; STDIN
+ * 1 ; STDOUT
+ * 2 ; STDERR
+ */
+  for(int i = 3; i < FDTABLE_SIZE; i++) {
+    process_file_close(i); // syscall close에서 fd를 받아 단일 파일을 close하는 동작이 필요하므로, 불가피하게 캡슐화
+  }
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -340,6 +349,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
         case PT_SHLIB:
           goto done;
         case PT_LOAD:
+// 그 뒤, 파일을 실제로 VM에 올리는 과정이 진행된다. 
+// 파일이 제대로 된 ELF 인지 검사하는 과정이 동반되며, 
+// 세그먼트 단위로 PT_LOAD의 헤더 타입을 가진 부분을 하나씩 메모리로 올리는 작업을 진행한다.
           if (validate_segment (&phdr, file)) 
             {
               bool writable = (phdr.p_flags & PF_W) != 0;
@@ -625,6 +637,8 @@ void init_esp(char** argv, char* argc, void** esp) {
   int argv_len = 0;
   int sum_argv_len = 0;
   /* push argv[argc-1] ~ argv[0] */
+
+  // 인자를 역순으로 스택에 복사
   for (i = argc; i > 0; i--) {
     argv_len = strlen(argv[i-1]); // argc = 3이면 argv[2]부터 넣는다.
     *esp = *esp - (argv_len + 1);
@@ -634,19 +648,23 @@ void init_esp(char** argv, char* argc, void** esp) {
   }
 
   /* push word align */
+  // 스택 포인터가 4바이트 배수가 되도록 감소시키고, 정렬을 위해 추가된 바이트에 0을 채움
   if (sum_argv_len % 4 != 0) *esp -= 4 - (sum_argv_len % 4);
 
   /* push NULL */
+  // 인자 주소 리스트의 끝을 표시
   *esp -= 4;
   **(uint32_t **)esp = 0;
 
   /* push address of argv[argc-1] ~ argv[0] */
+  // 인자 주소 넣기
   for (i = argc - 1; i >= 0; i--) {
     *esp -= 4;
     **(uint32_t **)esp = argv[i];
   }
 
   /* push address of argv */
+  // 인자 주소 리스트의 주소를 표시
   *esp -= 4;
   **(uint32_t **)esp = *esp + 4;
 
@@ -655,6 +673,7 @@ void init_esp(char** argv, char* argc, void** esp) {
   **(uint32_t **)esp = argc;
   
   /* push return address */
+  // 리턴 주소를 0으로 설정하여 스택의 최상단에 삽입. 이는 main 함수 종료 후 돌아갈 주소가 없음을 나타냄.
   *esp -= 4;
   **(uint32_t **)esp = 0;
 }
@@ -665,3 +684,18 @@ void init_esp(char** argv, char* argc, void** esp) {
 //   }
 //   free(argv);
 // }
+
+void process_file_close(int fd_idx) {
+  struct thread* t = thread_current();
+
+  // process_exit에서는 애초에 for문에서 걸러져서 들어오지만, close syscall에서는 fd를 받아 단일 파일에 대해 수행하므로, 검토 조건 필요하다.
+  if(fd_idx < 3 || fd_idx >= FDTABLE_SIZE) {
+    return;
+  }
+
+  if(t->fd_table[fd_idx] != NULL) {
+    file_close(t->fd_table[fd_idx]);
+  }
+
+  return;
+}

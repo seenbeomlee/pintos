@@ -487,6 +487,15 @@ init_thread (struct thread *t, const char *name, int priority)
   struct thread* parent_thread = running_thread();
   list_push_back(&(parent_thread->child_threads_list), &(t->child_thread_list_elem));
   t->parent_thread_pointer = running_thread();  
+
+  /**
+   * palloc_get_page(0) : 메모리 초기화가 진행되지 않는다.
+   * palloc_get_page(PAL_ZERO) : 메모리 초기화가 진행된다. -> 따라서, 별도로 for문 돌면서 fd_table[i] 초기화하는 작업 필요치 않다.
+   */
+  // t->fd_table = palloc_get_page(PAL_ZERO);
+  for(int i = 0; i < FDTABLE_SIZE; i++) {
+    t->fd_table[i] = NULL;
+  }
 #endif
 }
 
