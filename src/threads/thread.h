@@ -118,8 +118,6 @@ struct thread
 
     /* exit semaphore, 자식 프로세스 종료 대기를 위한 세마포어 */
     struct semaphore exit_sema;
-    /* wait semaphore, 자식 프로세스 생성 대기 */
-    struct semaphore wait_sema;
 
  /** 2 file descriptor
  * 각 thread는 고유한 file descriptor table을 가지고 있어야 한다. --- 미구현

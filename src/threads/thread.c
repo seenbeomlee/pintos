@@ -480,7 +480,6 @@ init_thread (struct thread *t, const char *name, int priority)
    * t의 parent_thread로는 running thread()를 넣어준다.
    */
   sema_init(&(t->exit_sema), 0);
-  sema_init(&(t->wait_sema), 0);
 
   list_init(&(t->child_threads_list));
 
