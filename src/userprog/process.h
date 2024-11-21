@@ -15,5 +15,7 @@ void parse_argv(char** argv, int argc, char* file_name);
 void free_argv(char** argv, int argc);
 
 void process_file_close(int fd_idx);
+int process_add_file (struct file* f);
+struct file* process_get_file (int fd);
 
 #endif /* userprog/process.h */

@@ -53,7 +53,7 @@ process_execute (const char *file_name)
   if (filesys_open(parsed_fn) == NULL) {
     return -1; 
   }
-  
+
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (parsed_fn, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
@@ -680,7 +680,9 @@ void init_esp(char** argv, char* argc, void** esp) {
 //   free(argv);
 // }
 
-void process_file_close(int fd_idx) {
+void 
+process_file_close (int fd_idx) 
+{
   struct thread* t = thread_current();
 
   // process_exit에서는 애초에 for문에서 걸러져서 들어오지만, close syscall에서는 fd를 받아 단일 파일에 대해 수행하므로, 검토 조건 필요하다.
@@ -693,4 +695,28 @@ void process_file_close(int fd_idx) {
   }
 
   return;
+}
+
+int 
+process_add_file (struct file* f)
+{
+  struct thread* t = thread_current();
+  int i;
+  for(i=3;i<FDTABLE_SIZE;i++){
+    if(t->fd_table[i]==NULL){
+      t->fd_table[i]=f;
+      return i;
+    }
+  }
+  return -1;
+}
+
+struct file* 
+process_get_file (int fd)
+{
+  struct thread* t = thread_current();
+  if(fd<3 || fd>=FDTABLE_SIZE){
+    return NULL;
+  }
+  return t->fd_table[fd];
 }
