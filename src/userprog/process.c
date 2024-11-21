@@ -692,6 +692,7 @@ process_file_close (int fd_idx)
 
   if(t->fd_table[fd_idx] != NULL) {
     file_close(t->fd_table[fd_idx]);
+    t->fd_table[fd_idx] = NULL;
   }
 
   return;
