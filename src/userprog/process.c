@@ -49,6 +49,11 @@ process_execute (const char *file_name)
 	 *  커맨드 라인 전체로 바뀌게 되어 Pass할 수 없다.
 	 */
   parse_filename(file_name, parsed_fn);
+
+  if (filesys_open(parsed_fn) == NULL) {
+    return -1; 
+  }
+  
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (parsed_fn, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
