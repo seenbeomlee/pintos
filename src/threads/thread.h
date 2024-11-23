@@ -114,7 +114,11 @@ struct thread
     /* wait semaphore, 자식 프로세스 생성 대기 */
     struct semaphore wait_sema;
 
+    /* file descriptor table */
     struct file* fd_table[FDTABLE_SIZE];    
+
+    /* 현재 실행중인 파일 for Denying Write to Executable */
+    struct file* exec_file;
 #endif
 
     /* Owned by thread.c. */

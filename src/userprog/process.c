@@ -169,7 +169,7 @@ process_wait (tid_t child_tid UNUSED)
 void
 process_exit (void)
 {
-  struct thread *cur = thread_current ();
+  struct thread *t = thread_current ();
   uint32_t *pd;
 
 /**
@@ -177,13 +177,14 @@ process_exit (void)
  * 1 ; STDOUT
  * 2 ; STDERR
  */
+  file_close(t->exec_file);
   for(int i = 3; i < FDTABLE_SIZE; i++) {
     process_file_close(i); // syscall close에서 fd를 받아 단일 파일을 close하는 동작이 필요하므로, 불가피하게 캡슐화
   }
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
-  pd = cur->pagedir;
+  pd = t->pagedir; 
   if (pd != NULL) 
     {
       /* Correct ordering here is crucial.  We must set
@@ -193,7 +194,7 @@ process_exit (void)
          directory before destroying the process's page
          directory, or our active page directory will be one
          that's been freed (and cleared). */
-      cur->pagedir = NULL;
+      t->pagedir = NULL;
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
@@ -296,7 +297,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
   struct file *file = NULL;
   off_t file_ofs;
   bool success = false;
-  int i;
 
   /* Allocate and activate page directory. */
   // 각 프로세스가 실행이 될 때, 각 프로세스에 해당하는 VM(virtual memory)이 만들어져야 하므로,
@@ -314,6 +314,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
       goto done; 
     }
 
+  /* Denying Write to Executable */
+  t->exec_file=file;
+  file_deny_write(file);
+
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
       || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)
@@ -329,7 +333,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   /* Read program headers. */
   file_ofs = ehdr.e_phoff;
-  for (i = 0; i < ehdr.e_phnum; i++) 
+  for (int i = 0; i < ehdr.e_phnum; i++) 
     {
       struct Elf32_Phdr phdr;
 
@@ -397,7 +401,11 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  /** Denying Write to Executable 
+   * file_allow_write() function은 file_close() function에서 호출된다.
+   * 즉, 이 부분을 주석 처리하지 않으면 기껏 deny 해두었던 기능이 load() 내에서 다시 allow 된다. 
+   */
+  // file_close (file);
   return success;
 }
 
