@@ -101,7 +101,14 @@ exit (int status)
 pid_t
 exec(const char *cmd_line) 
 {
-  return process_execute(cmd_line);
+  tid_t tid;
+
+  tid = process_execute(cmd_line);
+  // 자식 프로세스(tid를 갖는)가 문제없이 생성되었으면 그 자식 프로세스가 메모리에 적재될 때까지 대기한다.
+  if (tid != -1) {
+    sema_down(&(find_child_thread(tid)->load_sema));
+  }
+  return tid;
 }
 
 int

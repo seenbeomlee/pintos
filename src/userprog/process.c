@@ -51,6 +51,7 @@ process_execute (const char *file_name)
   parse_filename(file_name, parsed_fn);
 
   if (filesys_open(parsed_fn) == NULL) {
+    /* 프로세스 실행(생성) 실패 시에는 -1을 반환한다. */
     return -1; 
   }
 
@@ -106,7 +107,12 @@ start_process (void *file_name_)
 
   /* 파일 로드에 성공하면, setting_esp 을 진행한다. */
   if (success) {
-    // printf("successed!\n");
+    /* 메모리 적재 완료 시 부모 프로세스 다시 진행 (세마포어 이용) */
+    sema_up(&(thread_current()->load_sema));
+
+    /* 메모리 적재 성공 시 프로세스 디스크립터에 메모리 적재 성공 */
+    thread_current()->load_flag=true;
+
     setting_esp(file_name, &if_.esp);
   }
 
@@ -119,7 +125,9 @@ start_process (void *file_name_)
 */
   palloc_free_page (file_name);
   if (!success) {
-    // printf("not successed!\n");
+    /* 메모리 적재 실패 시 프로세스 디스크립터에 메모리 적재 실패 */
+    thread_current()->load_flag=false;
+    
     thread_exit ();
   }
 
@@ -160,7 +168,7 @@ process_wait (tid_t child_tid UNUSED)
      * child_thread의 exit_status를 받기 위해서, child thread의 memory를 삭제하는 단계를 child thread_exit() 시가 아니라,
      * 부모의 process_wait()가 재개된 시점으로 한다.. 맞나?
      */
-    list_remove(&(child_thread->child_thread_list_elem)); // 자식이 종료됨을 알리는 'wait_sema' signal을 받으면 현재 스레드(부모)의 자식 리스트에서 제거한다.
+    list_remove(&(child_thread->child_thread_list_elem)); // 자식이 종료됨을 알리는 'load_sema' signal을 받으면 현재 스레드(부모)의 자식 리스트에서 제거한다.
     return child_exit_status; // 자식의 exit_status를 반환한다.
   }
 }

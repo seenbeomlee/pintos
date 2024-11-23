@@ -109,10 +109,13 @@ struct thread
     /* child list */
     struct list child_threads_list;
 
+    /* 프로세스의 프로그램 메모리 적재 여부 확인 */
+    bool load_flag;
+
     /* exit semaphore, 자식 프로세스 종료 대기를 위한 세마포어 */
     struct semaphore exit_sema;
     /* wait semaphore, 자식 프로세스 생성 대기 */
-    struct semaphore wait_sema;
+    struct semaphore load_sema;
 
     /* file descriptor table */
     struct file* fd_table[FDTABLE_SIZE];    
