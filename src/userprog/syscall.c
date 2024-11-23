@@ -116,6 +116,10 @@ read(int fd, void *buffer, unsigned int size)
   int result;
   uint8_t temp;
   if(fd<0 || fd==1 || fd>=FDTABLE_SIZE){exit(-1);}
+
+  /* for read-bad-ptr */
+  check_address(buffer);
+
   lock_acquire(&filesys_lock);
   if(fd==0){
     for(result=0;(result<size) && (temp=input_getc());result++){
@@ -140,6 +144,10 @@ write (int fd, const void *buffer, unsigned size)
   int file_write_result;
   struct file* f;
   if(fd<=0 || fd>=FDTABLE_SIZE){exit(-1);}
+
+  /* for read-bad-ptr */
+  check_address(buffer);
+
   lock_acquire(&filesys_lock);
   if(fd==1){
     putbuf(buffer, size);
