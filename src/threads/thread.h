@@ -116,6 +116,8 @@ struct thread
     struct semaphore exit_sema;
     /* wait semaphore, 자식 프로세스 생성 대기 */
     struct semaphore load_sema;
+    /* for multi-oom 삭제될 때 부모의 자식 리스트에서 삭제하기 위해 메모리를 남겨두는 세마포어 */
+    struct semaphore remove_sema;
 
     /* file descriptor table */
     struct file* fd_table[FDTABLE_SIZE];    

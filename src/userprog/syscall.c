@@ -98,17 +98,34 @@ exit (int status)
   thread_exit ();
 }
 
+/** multi-oom
+ * start_process()에서 load()가 실패할 경우 exit(-1)을 한다.
+ * 하지만, 이렇게 메모리에 적재 중인 자식 프로세스가 적재에 실패해서 종료될 경우, 부모 프로세스에서는 자식 프로세스의 적재 실패를 알 수 없다.
+ * 따라서, 적재 실패(load_flag == false) 시 exec 자체에서 -1을 return 해줘야한다.
+ */
 pid_t
 exec(const char *cmd_line) 
 {
   tid_t tid;
+  struct thread* t;
 
   tid = process_execute(cmd_line);
-  // 자식 프로세스(tid를 갖는)가 문제없이 생성되었으면 그 자식 프로세스가 메모리에 적재될 때까지 대기한다.
-  if (tid != -1) {
-    sema_down(&(find_child_thread(tid)->load_sema));
+  t = find_child_thread(tid);
+  // 자식 프로세스가 문제없이 생성되었으면 그 자식 프로세스가 메모리에 적재될 때까지 대기한다.
+  if (t != NULL) {
+    sema_down(&(t->load_sema));
+    // 프로그램 적재 실패 시, -1 리턴
+    if(t->load_flag==false) {
+      return -1;
+    }
+    // 프로그램 적재 성공 시, child_tid 리턴
+    else {
+      return tid;
+    }
   }
-  return tid;
+  else {
+    return -1;
+  }
 }
 
 int
