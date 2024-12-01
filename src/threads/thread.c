@@ -294,7 +294,9 @@ thread_exit (void)
   list_remove (&curr->allelem);
   
   // 현재 종료시키는 thread의 parent thread가 있다면, 부모 thread의 wait를 중단시킨다.
+  // if (t->parent_thread_pointer != NULL) { // 현재 종료시키는 thread의 parent thread가 있다면, 부모 thread의 wait를 중단시킨다.
   sema_up(&(curr->exit_sema));
+  // }
 
   /** multi-oom
    * thread_exit()에서 remove_sema를 down시키고, process_wait()에서
@@ -480,12 +482,7 @@ init_thread (struct thread *t, const char *name, int priority)
   intr_set_level (old_level);
 
 #ifdef USERPROG
-  /**
-   * t라는 thread를 초기화 시키는 init_thread function은
-   * thread t의 부모 thread인 running thread()가 실행하게 된다.
-   * 따라서, running thread()의 child로는 t와 t의 자식들을 넣어주고,
-   * t의 parent_thread로는 running thread()를 넣어준다.
-   */
+  // multi-oom 추가
   t->load_flag = true;
 
   sema_init(&(t->exit_sema), 0);
@@ -494,6 +491,12 @@ init_thread (struct thread *t, const char *name, int priority)
 
   list_init(&(t->child_threads_list));
 
+  /**
+   * t라는 thread를 초기화 시키는 init_thread function은
+   * thread t의 부모 thread인 running thread()가 실행하게 된다.
+   * 따라서, running thread()의 child로는 t와 t의 자식들을 넣어주고,
+   * t의 parent_thread로는 running thread()를 넣어준다.
+   */
   struct thread* parent_thread = running_thread();
   list_push_back(&(parent_thread->child_threads_list), &(t->child_thread_list_elem));
   t->parent_thread_pointer = running_thread();  

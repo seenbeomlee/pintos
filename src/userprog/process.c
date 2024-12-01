@@ -207,15 +207,6 @@ process_exit (void)
   struct thread* child_thread;
   struct list_elem* elem;
 
-/**
- * 0 ; STDIN
- * 1 ; STDOUT
- * 2 ; STDERR
- */
-  for(int i = 3; i < FDTABLE_SIZE; i++) {
-    process_file_close(i); // syscall close에서 fd를 받아 단일 파일을 close하는 동작이 필요하므로, 불가피하게 캡슐화
-  }
-
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = curr->pagedir; 
