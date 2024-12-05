@@ -198,6 +198,9 @@ thread_create (const char *name, int priority,
   sf->eip = switch_entry;
   sf->ebp = 0;
 
+  list_init (&t->mmap_list);
+  t->next_mapid = 1;
+
   /* Add to run queue. */
   thread_unblock (t);
 
