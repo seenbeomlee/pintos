@@ -283,3 +283,122 @@ tell (int fd)
   if(f==NULL){exit(-1);}
   return file_tell(f);
 }
+
+int mmap(int fd, void* addr){
+
+  struct mmap_file *mmap_file;
+  size_t offset = 0;
+
+  if (pg_ofs (addr) != 0 || !addr)
+    return -1;
+  if (is_user_vaddr (addr) == false)
+    return -1;
+  mmap_file = (struct mmap_file *)malloc (sizeof (struct mmap_file));
+  if (mmap_file == NULL)
+    return -1;
+  memset (mmap_file, 0, sizeof(struct mmap_file));
+  list_init (&mmap_file->spe_list);
+  if (!(mmap_file->file = thread_current()->fd_table[fd]))
+    return -1;
+  mmap_file->file = file_reopen(mmap_file->file);
+  mmap_file->mapid = thread_current ()->next_mapid++;
+  list_push_back (&thread_current ()->mmap_list, &mmap_file->elem);
+
+  int length = file_length (mmap_file->file);
+  while (length > 0)
+    {
+      if (find_spe (addr))
+        return -1;
+
+      struct spt_entry *spe = (struct spt_entry *)malloc (sizeof (struct spt_entry));
+      memset (spe, 0, sizeof (struct spt_entry));
+      spe->type = VM_FILE;
+      spe->writable = true;
+      spe->vaddr = addr;
+      spe->offset = offset;
+      spe->read_bytes = length < PGSIZE ? length : PGSIZE;
+      spe->zero_bytes = PGSIZE - spe->read_bytes;
+      spe->file = mmap_file->file;
+      insert_spe (&thread_current ()->spt, spe);
+      list_push_back (&mmap_file->spe_list, &spe->mmap_elem);
+      addr += PGSIZE;
+      offset += PGSIZE;
+      length -= PGSIZE;
+    }
+  return mmap_file->mapid;
+}
+
+void rm_spt_umap(struct mmap_file* mmap_file){
+    struct thread *t = thread_current();
+    struct list_elem *elem, *temp;
+    struct list *spe_list = &(mmap_file->spe_list);
+    struct spt_entry *spe;
+    void* kaddr;
+
+    elem = list_begin(spe_list);
+
+    for(; elem != list_end(spe_list); elem = list_next(elem)){
+      spe = list_entry(elem, struct spt_entry, mmap_elem);
+      //printf("in for?\n");
+      if(spe->is_loaded==true){
+        kaddr = pagedir_get_page(t->pagedir, spe->vaddr);
+        // if dirty bit true, write to disk
+        if(pagedir_is_dirty(t->pagedir, spe->vaddr)==true){
+          lock_acquire(&filesys_lock);
+          file_write_at(spe->file, spe->vaddr, spe->read_bytes, spe->offset);
+          lock_release(&filesys_lock);
+          spe->is_loaded = false;
+        }
+        // clear page table
+        pagedir_clear_page(t->pagedir, spe->vaddr);
+        //printf("before free page?\n");
+        free_page(kaddr);
+        //printf("after free page?\n");
+      }
+      temp = list_prev(elem);
+      list_remove(elem);
+      elem = temp;
+      delete_spe(&t->spt, spe);
+    }
+}
+
+void munmap(int mapid){
+
+  struct mmap_file *mmap_file;
+  struct thread* t = thread_current();
+
+  struct list_elem* elem,  *temp;
+  for(elem = list_begin(&t->mmap_list) ; elem != list_end(&t->mmap_list) ; elem = list_next(elem)){
+    mmap_file = list_entry(elem, struct mmap_file, elem);
+
+    /**
+     * mapid == -1이면, 모든 매핑된 파일에 대해서
+     * 1. rm_spt_umap을 호출하여 spt에서 매핑된 페이지를 제거한다.
+     * 2. 매핑된 파일을 닫는다 (file_close)
+     * 3. mmap_file 구조체를 리스트에서 제거하고 메모리를 해제한다.
+     */
+    if(mapid==-1) {
+      rm_spt_umap(mmap_file);
+      file_close(mmap_file->file);
+      temp = list_prev(elem);
+      list_remove(elem);
+      elem = temp;
+      free(mmap_file);
+      continue;
+    }
+    /**
+     * mapid == 특정 mapid가 주어진 경우,
+     * 해당 mapid에 매핑된 파일에 대해서만 같은 작업을 처리하고 종료한다.
+     */
+    else if(mapid == mmap_file->mapid){
+      rm_spt_umap(mmap_file);
+      file_close(mmap_file->file);
+      temp = list_prev(elem);
+      list_remove(elem);
+      elem = temp;
+      free(mmap_file); 
+      break;
+    }
+  }
+
+}
