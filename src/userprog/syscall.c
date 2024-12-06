@@ -6,6 +6,10 @@
 #include "threads/vaddr.h"
 
 static void syscall_handler (struct intr_frame *);
+static void check_address(void* vaddr);
+static void check_valid_buffer(const char *buffer, unsigned size, bool to_write);
+static void rm_spt_umap(struct mmap_file* mmap_file);
+
 struct lock filesys_lock;
 
 void
@@ -20,7 +24,7 @@ syscall_init (void)
  * 그리고 시스템 콜 핸들러는 rax의 숫자로 시스템 콜을 호출하고, -> 이는 enum으로 선언되어있다.
  * 해달 콜의 반환값을 다시 rax에 담아서 intr_frame(인터럽트 프레임)에 저장한다.
  */
-static void // void 형식에 return을 추가해야 한다. (디버깅하다 발견한 사실이라 함.)
+static void
 syscall_handler (struct intr_frame *f) 
 {
   // Argument 순서
@@ -32,34 +36,45 @@ syscall_handler (struct intr_frame *f)
     break;
     case SYS_EXIT:                   /* Terminate this process. */
     check_address(f->esp+4);
+    check_address(f->esp+4);
     exit(*(int*)(f->esp+4));
     break;
     case SYS_EXEC:                   /* Start another process. */
     check_address(f->esp+4);
+    check_address(f->esp+4);
     f->eax=exec((char*)*(uint32_t*)(f->esp+4));
     break;
     case SYS_WAIT:                   /* Wait for a child process to die. */
+    check_address(f->esp+4);
     check_address(f->esp+4);
     f->eax = wait(*(uint32_t*)(f->esp+4));
     break;
     case SYS_CREATE:                 /* Create a file. */
     check_address(f->esp+4);
     check_address(f->esp+8);
+    check_address(f->esp+4);
+    check_address(f->esp+8);
     f->eax = create((char*)*(uint32_t*)(f->esp+4), *(uint32_t*)(f->esp+8));
     break;
     case SYS_REMOVE:                 /* Delete a file. */
+    check_address(f->esp+4);
     check_address(f->esp+4);
     f->eax = remove((char*)*(uint32_t*)(f->esp+4));
     break;
     case SYS_OPEN:                   /* Open a file. */
     check_address(f->esp+4);
+    check_address(f->esp+4);
     f->eax = open((char*)*(uint32_t*)(f->esp+4));
     break;
     case SYS_FILESIZE:               /* Obtain a file's size. */
     check_address(f->esp+4);
+    check_address(f->esp+4);
     f->eax = filesize(*(uint32_t*)(f->esp+4));
     break;
     case SYS_READ:                   /* Read from a file. */
+    check_address(f->esp+4);
+    check_address(f->esp+8);
+    check_address(f->esp+12);
     check_address(f->esp+4);
     check_address(f->esp+8);
     check_address(f->esp+12);
@@ -71,22 +86,38 @@ syscall_handler (struct intr_frame *f)
     check_address(f->esp+4);
     check_address(f->esp+8);
     check_address(f->esp+12);
+    check_address(f->esp+4);
+    check_address(f->esp+8);
+    check_address(f->esp+12);
     f->eax = write((int)*(uint32_t*)(f->esp+4), (const void*)*(uint32_t*)(f->esp+8),
 					(unsigned)*(uint32_t*)(f->esp+12));
     break;
     case SYS_SEEK:                   /* Change position in a file. */
     check_address(f->esp+4);
     check_address(f->esp+8);
+    check_address(f->esp+4);
+    check_address(f->esp+8);
     seek((int)*(uint32_t*)(f->esp+4), (unsigned)*(uint32_t*)(f->esp+8));
     break;
     case SYS_TELL:                   /* Report current position in a file. */
+    check_address(f->esp+4);
     check_address(f->esp+4);
     f->eax = tell((int)*(uint32_t*)(f->esp+4));
     break;
     case SYS_CLOSE:                  /* Close a file. */
     check_address(f->esp+4);
+    check_address(f->esp+4);
     close(*(uint32_t*)(f->esp+4));
     break;
+    case SYS_MMAP:
+      check_address(f->esp+4);
+      check_address(f->esp+8);
+      f->eax = mmap((int)(*(uint32_t *)(f->esp+4)), (void*)(*(uint32_t *)(f->esp+8)));
+      break;
+    case SYS_MUNMAP:
+      check_address(f->esp+4);
+      munmap((int)(*(uint32_t *)(f->esp+4)));
+      break;
   }
 }
 
@@ -284,6 +315,9 @@ tell (int fd)
   return file_tell(f);
 }
 
+/* ********** ********** ********** procject 3 : virtual memory ********** ********** ***********/
+
+
 int mmap(int fd, void* addr){
 
   struct mmap_file *mmap_file;
@@ -328,41 +362,7 @@ int mmap(int fd, void* addr){
   return mmap_file->mapid;
 }
 
-void rm_spt_umap(struct mmap_file* mmap_file){
-    struct thread *t = thread_current();
-    struct list_elem *elem, *temp;
-    struct list *spe_list = &(mmap_file->spe_list);
-    struct spt_entry *spe;
-    void* kaddr;
-
-    elem = list_begin(spe_list);
-
-    for(; elem != list_end(spe_list); elem = list_next(elem)){
-      spe = list_entry(elem, struct spt_entry, mmap_elem);
-      //printf("in for?\n");
-      if(spe->is_loaded==true){
-        kaddr = pagedir_get_page(t->pagedir, spe->vaddr);
-        // if dirty bit true, write to disk
-        if(pagedir_is_dirty(t->pagedir, spe->vaddr)==true){
-          lock_acquire(&filesys_lock);
-          file_write_at(spe->file, spe->vaddr, spe->read_bytes, spe->offset);
-          lock_release(&filesys_lock);
-          spe->is_loaded = false;
-        }
-        // clear page table
-        pagedir_clear_page(t->pagedir, spe->vaddr);
-        //printf("before free page?\n");
-        free_page(kaddr);
-        //printf("after free page?\n");
-      }
-      temp = list_prev(elem);
-      list_remove(elem);
-      elem = temp;
-      delete_spe(&t->spt, spe);
-    }
-}
-
-void munmap(int mapid){
+void munmap(int mapid) {
 
   struct mmap_file *mmap_file;
   struct thread* t = thread_current();
@@ -401,4 +401,75 @@ void munmap(int mapid){
     }
   }
 
+}
+
+
+/** 2
+ * 주소 값이 user 영역에서 사용하는 주소 값인지 확인한다.
+ * user 영역을 벗어난 영역일 경우, process를 종료한다. (exit (-1))
+ * pintos에서는 시스템 콜이 접근할 수 있는 주소를 0cx0000000 ~ 0x8048000(== KERN_BASE) 으로 제한한다. (이 이상은 커널 영역이다.)
+ * 유저 영역을 벗어난 영역일 경우, 비정상 접근이라고 판단하여 exit(-1)로 프로세스를 종료한다.
+ */
+static void check_address(void* vaddr) {
+  if (vaddr == NULL) {
+    exit(-1);
+  }
+  if (!is_user_vaddr(vaddr)) {
+    exit(-1);
+  }
+  // page fault 인지 체크하기 위해 필요한데, 추가하면 모든 테스트가 fail 된다. 이유는 모르겠다.
+  // if (!pagedir_get_page(thread_current()->pagedir, vaddr) == NULL) {
+  //   exit(-1);
+  // }
+}
+
+static void check_valid_buffer(const char *buffer, unsigned size, bool to_write) {
+  ASSERT(buffer!=NULL);
+
+  unsigned i;
+  struct spt_entry* spe;
+  for(i=0;i<size;i++){
+    check_address((void*)buffer+i);
+    spe = find_spe((void*)buffer+i);
+    if(spe == NULL) {
+      if(to_write){
+        if(!(spe->writable)){
+            exit(-1);
+        }
+      }
+    }
+  }
+}
+
+static void rm_spt_umap(struct mmap_file* mmap_file) {
+    struct thread *t = thread_current();
+    struct list_elem *elem, *temp;
+    struct list *spe_list = &(mmap_file->spe_list);
+    struct spt_entry *spe;
+    void* kaddr;
+
+    elem = list_begin(spe_list);
+
+    for(; elem != list_end(spe_list); elem = list_next(elem)){
+      spe = list_entry(elem, struct spt_entry, mmap_elem);
+      if(spe->is_loaded==true){
+        kaddr = pagedir_get_page(t->pagedir, spe->vaddr);
+        // if dirty bit true, write to disk
+        if(pagedir_is_dirty(t->pagedir, spe->vaddr)==true){
+          lock_acquire(&filesys_lock);
+          file_write_at(spe->file, spe->vaddr, spe->read_bytes, spe->offset);
+          lock_release(&filesys_lock);
+          spe->is_loaded = false;
+        }
+        // clear page table
+        pagedir_clear_page(t->pagedir, spe->vaddr);
+        //printf("before free page?\n");
+        free_page(kaddr);
+        //printf("after free page?\n");
+      }
+      temp = list_prev(elem);
+      list_remove(elem);
+      elem = temp;
+      delete_spe(&t->spt, spe);
+    }
 }

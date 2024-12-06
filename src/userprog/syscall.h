@@ -135,12 +135,7 @@ unsigned int tell(int fd);
  */
 void close(int fd);
 
-/** 2
- * 주소 값이 user 영역에서 사용하는 주소 값인지 확인한다.
- * user 영역을 벗어난 영역일 경우, process를 종료한다. (exit (-1))
- * pintos에서는 시스템 콜이 접근할 수 있는 주소를 0cx0000000 ~ 0x8048000(== KERN_BASE) 으로 제한한다. (이 이상은 커널 영역이다.)
- * 유저 영역을 벗어난 영역일 경우, 비정상 접근이라고 판단하여 exit(-1)로 프로세스를 종료한다.
- */
-void check_address(void* vaddr);
+int mmap(int fd, void* addr);
+void munmap(int mapid);
 
 #endif /* userprog/syscall.h */
