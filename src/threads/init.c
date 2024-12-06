@@ -129,7 +129,7 @@ main (void)
 #endif
 
   vm_init();
-  
+
   printf ("Boot complete.\n");
   
   /* Run actions specified on kernel command line. */
@@ -437,6 +437,6 @@ locate_block_device (enum block_type role, const char *name)
  * - 스왑 시스템 초기화
  */
 static void vm_init(void) {
-    lru_list_init();  // LRU 리스트 초기화
+    init_frame_table();  // LRU 리스트 초기화
     swap_init();      // 스왑 시스템 초기화
 }

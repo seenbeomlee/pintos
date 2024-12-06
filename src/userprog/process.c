@@ -597,7 +597,7 @@ setup_stack(void **esp) // esp (stack pointer)를 세팅하는 함수이다.
     bool is_successful = false;
 
     /* 물리 메모리 페이지 할당 */
-    frame_page = alloc_page_frame(PAL_USER | PAL_ZERO); // 사용자 영역에서 0으로 초기화된 페이지 할당
+    frame_page = allocate_frame(PAL_USER | PAL_ZERO); // 사용자 영역에서 0으로 초기화된 페이지 할당
     if (frame_page == NULL) {
         return false; // 물리 페이지 할당 실패 시 종료
     }
@@ -622,7 +622,7 @@ setup_stack(void **esp) // esp (stack pointer)를 세팅하는 함수이다.
     insert_spe(&(thread_current()->spt), frame_page->spe); // Supplementary Page Table(SPT)에 엔트리 삽입
 
     /* 페이지를 LRU 리스트에 추가 */
-    add_page_to_lru_list(frame_page); // 페이지를 LRU(Least Recently Used) 리스트에 추가하여 교체 알고리즘 지원
+    add_frame_to_lru(frame_page); // 페이지를 LRU(Least Recently Used) 리스트에 추가하여 교체 알고리즘 지원
 
     return is_successful; // 성공 여부 반환
 }

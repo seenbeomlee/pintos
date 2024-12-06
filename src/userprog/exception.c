@@ -152,14 +152,132 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  /* To implement virtual memory, delete the rest of the function
-     body, and replace it with code that brings in the page to
-     which fault_addr refers. */
-  printf ("Page fault at %p: %s error %s page in %s context.\n",
-          fault_addr,
-          not_present ? "not present" : "rights violation",
-          write ? "writing" : "reading",
-          user ? "user" : "kernel");
-  kill (f);
+    if (!is_user_vaddr(fault_addr)) {
+        exit(-1);
+    }
+    if (!not_present) {
+        exit(-1);
+    }
+
+    struct spt_entry* page_entry = find_spe(fault_addr);
+    if (page_entry == NULL) {
+        if (!validate_stack_growth(fault_addr, f->esp)) {
+            exit(-1);
+        }
+        if (!grow_user_stack(fault_addr)) {
+            exit(-1);
+        }
+        return;
+    }
+
+    if (!resolve_page_fault(page_entry)) {
+        printf("Page fault resolution failed.\n");
+        exit(-1);
+    }
 }
 
+static bool validate_stack_growth(void* access_addr, void* current_esp) {
+    /* 접근 주소가 사용자 주소인지 확인 */
+    if (!is_user_vaddr(access_addr)) {
+        return false;
+    }
+
+    /* 스택 크기 제한 확인 */
+    if (access_addr < MAX_STACK_LIMIT) {
+        return false;
+    }
+
+    /* esp와 fault_addr 간 거리 확인 */
+    uintptr_t distance = (uintptr_t)current_esp - (uintptr_t)access_addr;
+    if (distance > 32) {
+        return false;
+    }
+
+    /* 모든 조건 만족 */
+    return true;
+}
+
+static void initialize_spt_entry(struct spt_entry* entry, void* aligned_addr, struct page* frame) {
+    ASSERT(entry != NULL);
+    ASSERT(frame != NULL);
+
+    entry->type = VM_ANON;
+    entry->writable = true;
+    entry->is_loaded = true;
+    entry->vaddr = aligned_addr;
+    frame->spe = entry;
+}
+
+static bool process_page_type(struct spt_entry* entry, struct page* frame) {
+    ASSERT(entry != NULL);
+    ASSERT(frame != NULL);
+
+    switch (entry->type) {
+        case VM_BIN:
+        case VM_FILE:
+            if (!load_file(frame->kaddr, entry)) {
+                free_page(frame->kaddr);
+                return false;
+            }
+            entry->is_loaded = true;
+            break;
+
+        case VM_ANON:
+            swap_in(entry->swap_slot, frame->kaddr);
+            entry->is_loaded = true;
+            break;
+
+        default:
+            free_page(frame->kaddr);
+            return false;
+    }
+
+    return true;
+}
+
+static bool grow_user_stack(void* target_addr) {
+    void* aligned_addr = pg_round_down(target_addr);
+    struct page* new_frame = allocate_frame(PAL_USER | PAL_ZERO);
+    struct spt_entry* new_entry = malloc(sizeof(struct spt_entry));
+
+    if (!new_frame || !new_entry) {
+        if (new_frame) free_page(new_frame->kaddr);
+        if (new_entry) free(new_entry);
+        return false;
+    }
+
+    if (!install_page(aligned_addr, new_frame->kaddr, true)) {
+        free_page(new_frame->kaddr);
+        free(new_entry);
+        return false;
+    }
+
+    initialize_spt_entry(new_entry, aligned_addr, new_frame);
+
+    insert_spe(&(thread_current()->spt), new_entry);
+    add_frame_to_lru(new_frame);
+
+    return true;
+}
+
+static bool resolve_page_fault(struct spt_entry* page_entry) {
+    struct page* allocated_frame = allocate_frame(PAL_USER);
+    if (!allocated_frame) {
+        return false;
+    }
+
+    if (!process_page_type(page_entry, allocated_frame)) {
+        return false;
+    }
+
+    if (!install_page(page_entry->vaddr, allocated_frame->kaddr, page_entry->writable)) {
+        free_page(allocated_frame->kaddr);
+        return false;
+    }
+
+    page_entry->is_loaded = true;
+    allocated_frame->spe = page_entry;
+    add_frame_to_lru(allocated_frame);
+
+    return true;
+}

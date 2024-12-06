@@ -23,32 +23,32 @@ extern struct lock filesys_lock;
 static struct page* create_frame(enum palloc_flags flags);
 static void resolve_memory_shortage(enum palloc_flags flags, struct page* frame);
 
-void lru_list_init(void) {
-    list_init(&frame_table);  // 프레임 리스트 초기화
-    lock_init(&frame_table_lock);  // 락 초기화
-    frame_clock_pointer = NULL;  // 클럭 포인터 초기화
+void init_frame_table(void) {
+  list_init(&frame_table);  // 프레임 리스트 초기화
+  lock_init(&frame_table_lock);  // 락 초기화
+  frame_clock_pointer = NULL;  // 클럭 포인터 초기화
 }
 
 // 페이지 프레임 할당
-struct page* alloc_page_frame(enum palloc_flags flags) {
-    struct page* new_frame = create_frame(flags);
-    if (!new_frame) return NULL;
+struct page* allocate_frame(enum palloc_flags flags) {
+  struct page* new_frame = create_frame(flags);
+  if (!new_frame) return NULL;
 
-    if (!new_frame->kaddr) {
-        resolve_memory_shortage(flags, new_frame);  // 메모리 부족 시 처리
-    }
-    return new_frame;
+  if (!new_frame->kaddr) {
+    resolve_memory_shortage(flags, new_frame);  // 메모리 부족 시 처리
+  }
+  return new_frame;
 }
 
 // 프레임 구조체 생성 (헬퍼 함수)
 static struct page* create_frame(enum palloc_flags flags) {
-    struct page* frame = (struct page*)malloc(sizeof(struct page));
-    if (frame != NULL) {
-        memset(frame, 0, sizeof(struct page));
-        frame->t = thread_current();
-        frame->kaddr = palloc_get_page(flags);
-    }
-    return frame;
+  struct page* frame = (struct page*)malloc(sizeof(struct page));
+  if (frame != NULL) {
+    memset(frame, 0, sizeof(struct page));
+    frame->t = thread_current();
+    frame->kaddr = palloc_get_page(flags);
+  }
+  return frame;
 }
 
 // 메모리 부족 처리 로직 (헬퍼 함수)
@@ -58,7 +58,7 @@ static void resolve_memory_shortage(enum palloc_flags flags, struct page* frame)
     ASSERT(frame->kaddr != NULL);
 }
 
-void add_page_to_lru_list(struct page* page) {
+void add_frame_to_lru(struct page* page) {
   ASSERT(page);
   ASSERT(pg_ofs(page->kaddr) == 0); // 페이지 정렬 확인
 
@@ -67,7 +67,7 @@ void add_page_to_lru_list(struct page* page) {
   lock_release(&frame_table_lock);  // 락 해제
 }
 
-void delete_from_lru_list(struct page* page) {
+void remove_frame_from_lru(struct page* page) {
   ASSERT(page);
 
   lock_acquire(&frame_table_lock);
@@ -111,7 +111,7 @@ void free_page(void* kaddr) {
 
 // 페이지 삭제 내부 로직
 void __free_page(struct page* page) {
-    delete_from_lru_list(page);
+    remove_frame_from_lru(page);
     palloc_free_page(page->kaddr);
     free(page);
 }
