@@ -564,25 +564,67 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   return true;
 }
 
+/**
+ * initialize_spt_entry: SPT 엔트리를 생성하고 초기화하는 헬퍼 함수
+ */
+static struct spt_entry* initialize_spt_entry(void *vaddr, bool writable) 
+{
+    struct spt_entry *entry = calloc(1, sizeof(struct spt_entry)); // SPT 엔트리 동적 생성
+    if (entry == NULL) {
+        return NULL; // 메모리 할당 실패 시 NULL 반환
+    }
+
+    entry->type = VM_ANON; // 익명 페이지로 설정
+    entry->writable = writable; // 쓰기 가능 여부 설정
+    entry->is_loaded = true; // 페이지가 메모리에 로드됨
+    entry->vaddr = pg_round_down(vaddr); // 가상 주소를 페이지 단위로 정렬
+
+    return entry; // 초기화된 SPT 엔트리 반환
+}
+
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
-/* esp (stack pointer)를 세팅하는 함수이다. */
+/** project 3 : virtual memory
+ * 기존 코드에서는 palloc_get_page로 페이지를 직접 할당하고 바로 매핑했다.
+ * 페이지 상태(로드 여부, 읽기&쓰기 권한 등)를 관리할 수 있는 구조가 없으므로 페이지 폴트 교체나 페이지 교체와 같은 기능을 지원하지 않았다.
+ * 1. spt 사용 불가
+ * 2. lru 리스트 미사용
+ */
 static bool
-setup_stack (void **esp) 
+setup_stack(void **esp) // esp (stack pointer)를 세팅하는 함수이다.
 {
-  uint8_t *kpage;
-  bool success = false;
+    struct page *frame_page; // 물리 페이지를 가리키는 구조체
+    bool is_successful = false;
 
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-  if (kpage != NULL) 
-    {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-      if (success)
-        *esp = PHYS_BASE;
-      else
-        palloc_free_page (kpage);
+    /* 물리 메모리 페이지 할당 */
+    frame_page = alloc_page_frame(PAL_USER | PAL_ZERO); // 사용자 영역에서 0으로 초기화된 페이지 할당
+    if (frame_page == NULL) {
+        return false; // 물리 페이지 할당 실패 시 종료
     }
-  return success;
+
+    /* 사용자 가상 메모리와 물리 페이지 매핑 */
+    is_successful = install_page((uint8_t *)PHYS_BASE - PGSIZE, frame_page->kaddr, true);
+    if (!is_successful) {
+        free_page(frame_page->kaddr); // 매핑 실패 시 물리 메모리 해제
+        return false;
+    }
+
+    *esp = PHYS_BASE; // 스택 포인터 설정: 사용자 스택의 최상단 위치로 초기화
+
+    /* SPT 엔트리 초기화 및 추가 */
+    frame_page->spe = initialize_spt_entry((uint8_t *)PHYS_BASE - PGSIZE, true); // SPT 엔트리 생성 및 초기화
+    if (frame_page->spe == NULL) {
+        free_page(frame_page->kaddr); // SPT 초기화 실패 시 물리 메모리 해제
+        return false;
+    }
+
+    /* 현재 스레드의 SPT에 엔트리 추가 */
+    insert_spe(&(thread_current()->spt), frame_page->spe); // Supplementary Page Table(SPT)에 엔트리 삽입
+
+    /* 페이지를 LRU 리스트에 추가 */
+    add_page_to_lru_list(frame_page); // 페이지를 LRU(Least Recently Used) 리스트에 추가하여 교체 알고리즘 지원
+
+    return is_successful; // 성공 여부 반환
 }
 
 /* Adds a mapping from user virtual address UPAGE to kernel
