@@ -57,6 +57,7 @@ static const char *swap_bdev_name;
 /* -ul: Maximum number of pages to put into palloc's user pool. */
 static size_t user_page_limit = SIZE_MAX;
 
+static void vm_init(void);
 static void bss_init (void);
 static void paging_init (void);
 
@@ -127,6 +128,8 @@ main (void)
   filesys_init (format_filesys);
 #endif
 
+  vm_init();
+  
   printf ("Boot complete.\n");
   
   /* Run actions specified on kernel command line. */
@@ -427,3 +430,13 @@ locate_block_device (enum block_type role, const char *name)
     }
 }
 #endif
+
+/** project 3 : virtual memory
+ * vm_init: 가상 메모리 초기화를 수행하는 함수
+ * - LRU 리스트 초기화
+ * - 스왑 시스템 초기화
+ */
+static void vm_init(void) {
+    lru_list_init();  // LRU 리스트 초기화
+    swap_init();      // 스왑 시스템 초기화
+}
