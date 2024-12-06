@@ -7,7 +7,7 @@
 
 static void syscall_handler (struct intr_frame *);
 static void check_address(void* vaddr);
-static void check_valid_buffer(const char *buffer, unsigned size, bool to_write);
+static void check_buffer(const char *buffer, unsigned size, bool to_write);
 static void rm_spt_umap(struct mmap_file* mmap_file);
 
 struct lock filesys_lock;
@@ -180,7 +180,8 @@ read(int fd, void *buffer, unsigned int size)
   if(fd<0 || fd==1 || fd>=FDTABLE_SIZE){exit(-1);}
 
   /* for read-bad-ptr */
-  check_address(buffer);
+  // check_address(buffer)
+  check_buffer(buffer, size, 1);
 
   lock_acquire(&filesys_lock);
   if(fd==0){
@@ -208,7 +209,8 @@ write (int fd, const void *buffer, unsigned size)
   if(fd<=0 || fd>=FDTABLE_SIZE){exit(-1);}
 
   /* for read-bad-ptr */
-  check_address(buffer);
+  // check_address(buffer)
+  check_buffer(buffer, size, 0);
 
   lock_acquire(&filesys_lock);
   if(fd==1){
@@ -403,44 +405,6 @@ void munmap(int mapid) {
 
 }
 
-
-/** 2
- * 주소 값이 user 영역에서 사용하는 주소 값인지 확인한다.
- * user 영역을 벗어난 영역일 경우, process를 종료한다. (exit (-1))
- * pintos에서는 시스템 콜이 접근할 수 있는 주소를 0cx0000000 ~ 0x8048000(== KERN_BASE) 으로 제한한다. (이 이상은 커널 영역이다.)
- * 유저 영역을 벗어난 영역일 경우, 비정상 접근이라고 판단하여 exit(-1)로 프로세스를 종료한다.
- */
-static void check_address(void* vaddr) {
-  if (vaddr == NULL) {
-    exit(-1);
-  }
-  if (!is_user_vaddr(vaddr)) {
-    exit(-1);
-  }
-  // page fault 인지 체크하기 위해 필요한데, 추가하면 모든 테스트가 fail 된다. 이유는 모르겠다.
-  // if (!pagedir_get_page(thread_current()->pagedir, vaddr) == NULL) {
-  //   exit(-1);
-  // }
-}
-
-static void check_valid_buffer(const char *buffer, unsigned size, bool to_write) {
-  ASSERT(buffer!=NULL);
-
-  unsigned i;
-  struct spt_entry* spe;
-  for(i=0;i<size;i++){
-    check_address((void*)buffer+i);
-    spe = find_spe((void*)buffer+i);
-    if(spe == NULL) {
-      if(to_write){
-        if(!(spe->writable)){
-            exit(-1);
-        }
-      }
-    }
-  }
-}
-
 static void rm_spt_umap(struct mmap_file* mmap_file) {
     struct thread *t = thread_current();
     struct list_elem *elem, *temp;
@@ -471,5 +435,57 @@ static void rm_spt_umap(struct mmap_file* mmap_file) {
       list_remove(elem);
       elem = temp;
       delete_spe(&t->spt, spe);
+    }
+}
+
+/** 2
+ * 주소 값이 user 영역에서 사용하는 주소 값인지 확인한다.
+ * user 영역을 벗어난 영역일 경우, process를 종료한다. (exit (-1))
+ * pintos에서는 시스템 콜이 접근할 수 있는 주소를 0cx0000000 ~ 0x8048000(== KERN_BASE) 으로 제한한다. (이 이상은 커널 영역이다.)
+ * 유저 영역을 벗어난 영역일 경우, 비정상 접근이라고 판단하여 exit(-1)로 프로세스를 종료한다.
+ */
+static void check_address(void* vaddr) {
+  if (vaddr == NULL) {
+    exit(-1);
+  }
+  if (!is_user_vaddr(vaddr)) {
+    exit(-1);
+  }
+  // page fault 인지 체크하기 위해 필요한데, 추가하면 모든 테스트가 fail 된다. 이유는 모르겠다.
+  // if (!pagedir_get_page(thread_current()->pagedir, vaddr) == NULL) {
+  //   exit(-1);
+  // }
+}
+
+/** project 3 : virtual memory
+ * 1. 버퍼의 전체 범위 검사
+ * 2. spt 활용하여 각 주소가 spt에 존재하는지 확인, 해당 페이지가 로드되었는지 확인
+ * 3. 쓰기 권한 확인 (to_write)
+ */
+static void check_buffer(const char *buffer, unsigned size, bool to_write) {
+    ASSERT(buffer != NULL);
+
+    unsigned i;
+    struct spt_entry *spe;
+
+    /* 버퍼의 모든 바이트를 검사 */
+    for (i = 0; i < size; i++) {
+        void *addr = (void *)(buffer + i);
+
+        /* 주소가 사용자 메모리 공간에 있는지 확인 */
+        check_address(addr);
+
+        /* SPT에서 엔트리를 검색 */
+        spe = find_spe(addr);
+
+        /* 페이지가 로드되지 않았거나 유효하지 않으면 예외 처리 */
+        if (spe == NULL) {
+            exit(-1);
+        }
+
+        /* 쓰기 요청 시 페이지의 쓰기 권한 확인 */
+        if (to_write && !spe->writable) {
+            exit(-1);
+        }
     }
 }
