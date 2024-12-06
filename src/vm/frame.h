@@ -21,15 +21,5 @@ void remove_frame_from_lru(struct page* target_page);
 
 /* Free a page by its kernel address */
 void free_page(void* kernel_addr);
-void __free_page(struct page* target_page);
-
-/* Retrieve a page structure using its kernel address */
-struct page* get_page_with_kaddr(void* kernel_addr);
-
-/* Iterate to the next node in the LRU list */
-static struct list_elem* get_next_lru_clock(void);
-
-/* Free pages based on the LRU algorithm */
-void try_to_free_pages(void);
 
 #endif
