@@ -9,7 +9,8 @@ static void syscall_handler (struct intr_frame *);
 static void check_address(void* vaddr);
 static void check_buffer(const char *buffer, unsigned size, bool to_write);
 static void free_mmap_file(struct mmap_file *mmap_file, struct list_elem **elem);
-static void rm_spt_umap(struct mmap_file* mmap_file);
+static void cleanup_mmap_pages(struct mmap_file* mmap_file);
+static void handle_page_removal(struct spt_entry *spe, uint32_t *pagedir);
 
 struct lock filesys_lock;
 
@@ -409,7 +410,7 @@ static void free_mmap_file(struct mmap_file *mmap_file, struct list_elem **elem)
     }
 
     /* 매핑된 페이지 해제 */
-    rm_spt_umap(mmap_file);
+    cleanup_mmap_pages(mmap_file);
 
     /* 파일 닫기 */
     file_close(mmap_file->file);
@@ -419,37 +420,47 @@ static void free_mmap_file(struct mmap_file *mmap_file, struct list_elem **elem)
     free(mmap_file);
 }
 
-static void rm_spt_umap(struct mmap_file* mmap_file) {
+static void cleanup_mmap_pages(struct mmap_file *mmap_file) {
     struct thread *t = thread_current();
-    struct list_elem *elem, *temp;
+    struct list_elem *elem, *next;
     struct list *spe_list = &(mmap_file->spe_list);
-    struct spt_entry *spe;
-    void* kaddr;
 
-    elem = list_begin(spe_list);
+    for (elem = list_begin(spe_list); elem != list_end(spe_list); elem = next) {
+        next = list_next(elem);  // 다음 요소 저장
+        struct spt_entry *spe = list_entry(elem, struct spt_entry, mmap_elem);
 
-    for(; elem != list_end(spe_list); elem = list_next(elem)){
-      spe = list_entry(elem, struct spt_entry, mmap_elem);
-      if(spe->is_loaded==true){
-        kaddr = pagedir_get_page(t->pagedir, spe->vaddr);
-        // if dirty bit true, write to disk
-        if(pagedir_is_dirty(t->pagedir, spe->vaddr)==true){
-          lock_acquire(&filesys_lock);
-          file_write_at(spe->file, spe->vaddr, spe->read_bytes, spe->offset);
-          lock_release(&filesys_lock);
-          spe->is_loaded = false;
+        // 로드된 페이지 처리
+        if (spe->is_loaded) {
+            handle_page_removal(spe, t->pagedir);  // 헬퍼 함수 호출
+            spe->is_loaded = false;               // 상태 업데이트
         }
-        // clear page table
-        pagedir_clear_page(t->pagedir, spe->vaddr);
-        //printf("before free page?\n");
-        free_page(kaddr);
-        //printf("after free page?\n");
-      }
-      temp = list_prev(elem);
-      list_remove(elem);
-      elem = temp;
-      delete_spe(&t->spt, spe);
+
+        // 엔트리 제거
+        list_remove(elem);
+        delete_spe(&t->spt, spe);
     }
+}
+
+/* dirty 페이지 기록, 페이지 테이블 제거, 메모리 해제를 한 함수로 통합했다. */
+static void handle_page_removal(struct spt_entry *spe, uint32_t *pagedir) {
+    ASSERT(spe != NULL);
+    ASSERT(pagedir != NULL);
+
+    // spt 엔트리의 가장 주소(spe->vaddr)에 매핑된 물리 메모리 주소를 가져온다.
+    void *kaddr = pagedir_get_page(pagedir, spe->vaddr);
+
+    // Dirty 페이지인 경우 디스크에 기록
+    if (pagedir_is_dirty(pagedir, spe->vaddr)) {
+        lock_acquire(&filesys_lock);
+        file_write_at(spe->file, spe->vaddr, spe->read_bytes, spe->offset);
+        lock_release(&filesys_lock);
+    }
+
+    // 페이지 테이블에서 제거 및 메모리 해제, 즉 페이지 테이블에서 '가상 주소와 물리 주소의 매핑을 제거'한다.
+    // 이후 해당 가상 주소로 접근하려고 하면, 매핑이 해제되었기 때문에 당연히 page fault가 발생한다.
+    pagedir_clear_page(pagedir, spe->vaddr);
+    // 받아 온 물리 메모리 주소(kaddr)를 통해 '물리 메모리를 실제로 해제'하여 다른 작업에서 재사용할 수 있도록 만든다.
+    free_page(kaddr);
 }
 
 /** 2
