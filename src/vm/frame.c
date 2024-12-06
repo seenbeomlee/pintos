@@ -24,7 +24,11 @@ static struct page* create_frame(enum palloc_flags flags);
 static void resolve_memory_shortage(enum palloc_flags flags, struct page* frame);
 
 static struct page* find_frame_by_kaddr(void* kernel_addr);
+static bool is_kaddr_match(struct page* frame, void* kernel_addr);
+
 static void evict_frame(void);
+static bool process_eviction(struct page* frame);
+
 static struct list_elem* get_next_lru_pointer(void);
 static void release_frame(struct page* frame);
 
@@ -87,27 +91,35 @@ void remove_frame_from_lru(struct page* page) {
   lock_release(&frame_table_lock);
 }
 
-// 커널 주소로 페이지 검색
 static struct page* find_frame_by_kaddr(void* kernel_addr) {
   ASSERT(pg_ofs(kernel_addr) == 0);
+  
+  return find_frame(is_kaddr_match, kernel_addr);
+}
 
-  struct page* frame = NULL;
+/* 람다 함수 : 특정 조건에 맞는 프레임을 검색 */
+struct page* find_frame(bool (*condition)(struct page*, void*), void* aux) {
+  struct page* result_frame = NULL;
   struct list_elem* elem;
 
   lock_acquire(&frame_table_lock);
   for (elem = list_begin(&frame_table); elem != list_end(&frame_table); elem = list_next(elem)) {
     struct page* current_frame = list_entry(elem, struct page, lru);
-    if (current_frame->kaddr == kernel_addr) {
-      frame = current_frame;
+    if (condition(current_frame, aux)) {
+      result_frame = current_frame;
       break;
     }
   }
   lock_release(&frame_table_lock);
 
-  return frame;
+  return result_frame;
 }
 
-// 메모리 부족 시 페이지 해제
+/* 조건 함수 : 커널 주소 일치 여부 */
+static bool is_kaddr_match(struct page* frame, void* kernel_addr) {
+  return frame->kaddr == kernel_addr;
+}
+
 static void evict_frame(void) {
   ASSERT(!list_empty(&frame_table));
 
@@ -115,7 +127,7 @@ static void evict_frame(void) {
 
   lock_acquire(&frame_table_lock);
 
-  while (1) {
+  while (true) {
     struct list_elem* elem = get_next_lru_pointer();
     victim_frame = list_entry(elem, struct page, lru);
 
@@ -124,25 +136,32 @@ static void evict_frame(void) {
       continue;
     }
 
-    if (pagedir_is_dirty(victim_frame->t->pagedir, victim_frame->spe->vaddr) || victim_frame->spe->type == VM_ANON) {
-      if (victim_frame->spe->type == VM_FILE) {
-        lock_acquire(&filesys_lock);
-        file_write_at(victim_frame->spe->file, victim_frame->kaddr, victim_frame->spe->read_bytes, victim_frame->spe->offset);
-        lock_release(&filesys_lock);
-      } else {
-        victim_frame->spe->type = VM_ANON;
-        victim_frame->spe->swap_slot = swap_out(victim_frame->kaddr);
-      }
-
-      victim_frame->spe->is_loaded = false;
-      pagedir_clear_page(victim_frame->t->pagedir, victim_frame->spe->vaddr);
-
+    if (process_eviction(victim_frame)) { // 핼퍼 함수 호출
       lock_release(&frame_table_lock);
       break;
     }
   }
 
   release_frame(victim_frame);
+}
+
+static bool process_eviction(struct page* frame) {
+  if (pagedir_is_dirty(frame->t->pagedir, frame->spe->vaddr) || frame->spe->type == VM_ANON) {
+    if (frame->spe->type == VM_FILE) {
+      lock_acquire(&filesys_lock);
+      file_write_at(frame->spe->file, frame->kaddr, frame->spe->read_bytes, frame->spe->offset);
+      lock_release(&filesys_lock);
+    } else {
+      frame->spe->type = VM_ANON;
+      frame->spe->swap_slot = swap_out(frame->kaddr);
+    }
+
+    frame->spe->is_loaded = false;
+    pagedir_clear_page(frame->t->pagedir, frame->spe->vaddr);
+    return true; // 성공적으로 페이지를 처리했음을 반환
+  }
+
+  return false; // 처리되지 않았음을 반환
 }
 
 // 다음 LRU 포인터 가져오기

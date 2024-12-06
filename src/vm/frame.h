@@ -16,6 +16,9 @@ struct page* allocate_frame(enum palloc_flags flags);
 /* Add a frame to the LRU list to manage replacement policies */
 void add_frame_to_lru(struct page* new_page);
 
+/* find frame with specific condition function (like lamdba) */
+struct page* find_frame(bool (*condition)(struct page*, void*), void* aux) ;
+
 /* Remove a frame from the LRU list and update the clock pointer if necessary */
 void remove_frame_from_lru(struct page* target_page);
 
