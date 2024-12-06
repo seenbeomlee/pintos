@@ -12,9 +12,11 @@
 #include "vm/swap.h"
 #include "vm/frame.h"
 
-// Frame 관리용 리스트와 락
-static struct list frame_table;
-static struct list_elem* frame_clock_pointer;
+/** project 3 : virtual memory
+ * LRU (Least Recently Used) 알고리즘을 통해 페이지 교체를 하기 위한 변수이다.
+ */
+static struct list frame_table; // 모든 물리 메모리 프레임이 저장된 리스트로, 리스트 노드로 관리되며, 페이지 교체 시 순회한다.
+static struct list_elem* frame_clock_pointer; // LRU에서 현재 탐색 중인 프레임을 가리키는 포인터로, 이 포인터로 순회하며 희생 페이지 선택한다.
 
 static struct lock frame_table_lock;
 
@@ -91,103 +93,111 @@ void remove_frame_from_lru(struct page* page) {
   lock_release(&frame_table_lock);
 }
 
+// 커널 주소를 기반으로 페이지 프레임을 검색
 static struct page* find_frame_by_kaddr(void* kernel_addr) {
-  ASSERT(pg_ofs(kernel_addr) == 0);
-  
-  return find_frame(is_kaddr_match, kernel_addr);
+  ASSERT(pg_ofs(kernel_addr) == 0);  // 커널 주소는 페이지 크기로 정렬되어야 함
+
+  return find_frame(is_kaddr_match, kernel_addr);  // 특정 조건에 따라 프레임 검색
 }
 
-/* 람다 함수 : 특정 조건에 맞는 프레임을 검색 */
+// 리스트를 순회하며 조건에 맞는 프레임을 검색
 struct page* find_frame(bool (*condition)(struct page*, void*), void* aux) {
   struct page* result_frame = NULL;
   struct list_elem* elem;
 
-  lock_acquire(&frame_table_lock);
+  lock_acquire(&frame_table_lock);  // 동시 접근 방지를 위한 락 획득
   for (elem = list_begin(&frame_table); elem != list_end(&frame_table); elem = list_next(elem)) {
     struct page* current_frame = list_entry(elem, struct page, lru);
-    if (condition(current_frame, aux)) {
+    if (condition(current_frame, aux)) {  // 조건을 만족하는 경우 프레임 반환
       result_frame = current_frame;
       break;
     }
   }
-  lock_release(&frame_table_lock);
+  lock_release(&frame_table_lock);  // 락 해제
 
-  return result_frame;
+  return result_frame;  // 조건을 만족하는 프레임 반환 또는 NULL
 }
 
-/* 조건 함수 : 커널 주소 일치 여부 */
+// 커널 주소가 일치하는지 확인하는 조건 함수
 static bool is_kaddr_match(struct page* frame, void* kernel_addr) {
-  return frame->kaddr == kernel_addr;
+  return frame->kaddr == kernel_addr;  // 프레임의 커널 주소가 주어진 주소와 동일한지 확인
 }
 
+// LRU 알고리즘을 사용해 메모리 부족 시 페이지를 해제
 static void evict_frame(void) {
-  ASSERT(!list_empty(&frame_table));
+  ASSERT(!list_empty(&frame_table));  // 프레임 테이블이 비어 있지 않음
 
   struct page* victim_frame = NULL;
 
-  lock_acquire(&frame_table_lock);
+  lock_acquire(&frame_table_lock);  // 동시 접근 방지를 위한 락 획득
 
   while (true) {
-    struct list_elem* elem = get_next_lru_pointer();
-    victim_frame = list_entry(elem, struct page, lru);
+    struct list_elem* elem = get_next_lru_pointer();  // LRU 알고리즘에 따라 다음 프레임 선택
+    victim_frame = list_entry(elem, struct page, lru); // 희생 페이지 가져오기
 
+    // 접근 비트가 설정된 경우 클리어하고 다음 프레임으로 이동
     if (pagedir_is_accessed(victim_frame->t->pagedir, victim_frame->spe->vaddr)) {
-      pagedir_set_accessed(victim_frame->t->pagedir, victim_frame->spe->vaddr, false);
-      continue;
+      pagedir_set_accessed(victim_frame->t->pagedir, victim_frame->spe->vaddr, false); // 접근 비트 클리어
+      continue;  // 최근에 사용된 페이지이므로 다음으로 이동
     }
 
-    if (process_eviction(victim_frame)) { // 핼퍼 함수 호출
-      lock_release(&frame_table_lock);
+    // Dirty 페이지 처리 또는 스왑 아웃
+    if (process_eviction(victim_frame)) {  // 페이지가 Dirty하거나 익명 페이지인 경우 스왑을 처리하는 방식
+      lock_release(&frame_table_lock);  // 성공적으로 페이지를 처리한 경우 락 해제 후 종료
       break;
     }
   }
 
-  release_frame(victim_frame);
+  release_frame(victim_frame);  // 희생 페이지 메모리 해제
 }
 
+// Dirty 페이지 또는 Anonymout Page의 스왑 아웃을 처리하는 방식
 static bool process_eviction(struct page* frame) {
   if (pagedir_is_dirty(frame->t->pagedir, frame->spe->vaddr) || frame->spe->type == VM_ANON) {
-    if (frame->spe->type == VM_FILE) {
+    if (frame->spe->type == VM_FILE) { // 파일 기반 페이지의 경우 처리
+      // 파일 페이지는 디스크로 다시 기록
       lock_acquire(&filesys_lock);
       file_write_at(frame->spe->file, frame->kaddr, frame->spe->read_bytes, frame->spe->offset);
       lock_release(&filesys_lock);
-    } else {
+    } else { // 익명 페이지의 경우 처리
+      // 익명 페이지는 스왑 슬롯으로 기록
       frame->spe->type = VM_ANON;
       frame->spe->swap_slot = swap_out(frame->kaddr);
     }
 
-    frame->spe->is_loaded = false;
-    pagedir_clear_page(frame->t->pagedir, frame->spe->vaddr);
-    return true; // 성공적으로 페이지를 처리했음을 반환
+    // 페이지 상태 갱신
+    frame->spe->is_loaded = false; // 메모리에서 로드 상태 제거
+    pagedir_clear_page(frame->t->pagedir, frame->spe->vaddr);  // 페이지 테이블에서 제거
+    return true;  // 페이지 처리 성공
   }
 
-  return false; // 처리되지 않았음을 반환
+  return false;  // 페이지 처리 실패
 }
 
-// 다음 LRU 포인터 가져오기
+// LRU 알고리즘에 따라 다음 포인터를 가져옴
 static struct list_elem* get_next_lru_pointer(void) {
   if (!frame_clock_pointer || frame_clock_pointer == list_end(&frame_table)) {
-    frame_clock_pointer = list_begin(&frame_table);
+    frame_clock_pointer = list_begin(&frame_table);  // 포인터를 리스트의 처음 프레임으로 이동
   } else {
-    frame_clock_pointer = list_next(frame_clock_pointer);
+    frame_clock_pointer = list_next(frame_clock_pointer);  // 포인터를 다음 프레임으로 이동
   }
 
   if (frame_clock_pointer == list_end(&frame_table)) {
-    frame_clock_pointer = list_begin(&frame_table);
+    frame_clock_pointer = list_begin(&frame_table);  // 리스트의 끝에 도달하면 처음 프레임으로 포인터를 이동
   }
   return frame_clock_pointer;
 }
 
-// 페이지 메모리 해제
+// 커널 주소에 해당하는 페이지 메모리를 해제
 void free_page(void* kernel_addr) {
   struct page* target_frame = find_frame_by_kaddr(kernel_addr);
-  ASSERT(target_frame != NULL);
-  release_frame(target_frame);
+  ASSERT(target_frame != NULL);  // 해당 커널 주소가 유효해야 함
+  release_frame(target_frame);  // 페이지 메모리와 관련 리소스 해제
 }
 
-// 페이지 삭제 내부 로직
+// 페이지 메모리와 관련 리소스를 해제하는 내부 함수
 static void release_frame(struct page* frame) {
-  remove_frame_from_lru(frame);
-  palloc_free_page(frame->kaddr);
-  free(frame);
+  remove_frame_from_lru(frame);      // LRU 리스트에서 제거
+  palloc_free_page(frame->kaddr);   // 물리 메모리 해제
+  free(frame);                      // 페이지 구조체 메모리 해제
 }
