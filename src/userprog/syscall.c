@@ -8,6 +8,7 @@
 static void syscall_handler (struct intr_frame *);
 static void check_address(void* vaddr);
 static void check_buffer(const char *buffer, unsigned size, bool to_write);
+static void free_mmap_file(struct mmap_file *mmap_file, struct list_elem **elem);
 static void rm_spt_umap(struct mmap_file* mmap_file);
 
 struct lock filesys_lock;
@@ -319,35 +320,42 @@ tell (int fd)
 
 /* ********** ********** ********** procject 3 : virtual memory ********** ********** ***********/
 
-
 int mmap(int fd, void* addr){
 
   struct mmap_file *mmap_file;
   size_t offset = 0;
 
-  if (pg_ofs (addr) != 0 || !addr)
+  if (!addr) // addr이 NULL 값인지 확인
     return -1;
-  if (is_user_vaddr (addr) == false)
+  if (pg_ofs (addr) != 0) // addr이 페이지 정렬되어 있는지 확인
     return -1;
+  if (is_user_vaddr (addr) == false) // addr가 사용자 주소 공간인지 확인
+    return -1;
+
+  // 매핑 파일 구조체 생성
   mmap_file = (struct mmap_file *)malloc (sizeof (struct mmap_file));
   if (mmap_file == NULL)
     return -1;
+
   memset (mmap_file, 0, sizeof(struct mmap_file));
   list_init (&mmap_file->spe_list);
   if (!(mmap_file->file = thread_current()->fd_table[fd]))
     return -1;
-  mmap_file->file = file_reopen(mmap_file->file);
-  mmap_file->mapid = thread_current ()->next_mapid++;
-  list_push_back (&thread_current ()->mmap_list, &mmap_file->elem);
 
+  mmap_file->file = file_reopen(mmap_file->file); // 파일을 다시 열어서 독립된 핸들을 확보
+  mmap_file->mapid = thread_current ()->next_mapid++; // mapid 부여
+  list_push_back (&thread_current ()->mmap_list, &mmap_file->elem); // current thread의 mmap_list에 추가
+
+  // spt 엔트리 생성 및 매핑
   int length = file_length (mmap_file->file);
   while (length > 0)
     {
-      if (find_spe (addr))
+      if (find_spe (addr)) // 중복된 매핑 방지
         return -1;
 
       struct spt_entry *spe = (struct spt_entry *)malloc (sizeof (struct spt_entry));
       memset (spe, 0, sizeof (struct spt_entry));
+
       spe->type = VM_FILE;
       spe->writable = true;
       spe->vaddr = addr;
@@ -355,54 +363,60 @@ int mmap(int fd, void* addr){
       spe->read_bytes = length < PGSIZE ? length : PGSIZE;
       spe->zero_bytes = PGSIZE - spe->read_bytes;
       spe->file = mmap_file->file;
+
       insert_spe (&thread_current ()->spt, spe);
       list_push_back (&mmap_file->spe_list, &spe->mmap_elem);
+
       addr += PGSIZE;
       offset += PGSIZE;
       length -= PGSIZE;
     }
+
   return mmap_file->mapid;
 }
 
 void munmap(int mapid) {
+    struct mmap_file *mmap_file;  // 매핑된 파일 정보를 담는 구조체
+    struct thread *t = thread_current();  // 현재 스레드 정보
+    struct list_elem *elem = list_begin(&t->mmap_list);  // mmap_list의 첫 번째 요소
+    struct list_elem *next;  // 다음 요소를 저장할 포인터
 
-  struct mmap_file *mmap_file;
-  struct thread* t = thread_current();
+    // mmap_list를 순회하며 매핑된 파일을 해제
+    while (elem != list_end(&t->mmap_list)) {
+        mmap_file = list_entry(elem, struct mmap_file, elem);
+        next = list_next(elem);  // 다음 요소를 미리 저장
 
-  struct list_elem* elem,  *temp;
-  for(elem = list_begin(&t->mmap_list) ; elem != list_end(&t->mmap_list) ; elem = list_next(elem)){
-    mmap_file = list_entry(elem, struct mmap_file, elem);
+        switch (mapid) {
+            case -1:  /* 모든 매핑 해제 */
+                free_mmap_file(mmap_file, &elem);
+                elem = next;  // 다음 요소로 이동
+                break;
 
-    /**
-     * mapid == -1이면, 모든 매핑된 파일에 대해서
-     * 1. rm_spt_umap을 호출하여 spt에서 매핑된 페이지를 제거한다.
-     * 2. 매핑된 파일을 닫는다 (file_close)
-     * 3. mmap_file 구조체를 리스트에서 제거하고 메모리를 해제한다.
-     */
-    if(mapid==-1) {
-      rm_spt_umap(mmap_file);
-      file_close(mmap_file->file);
-      temp = list_prev(elem);
-      list_remove(elem);
-      elem = temp;
-      free(mmap_file);
-      continue;
+            default:  /* 특정 mapid 매핑 해제 */
+                if (mapid == mmap_file->mapid) {
+                    free_mmap_file(mmap_file, &elem);
+                    return;  // 특정 mapid 작업 완료 후 함수 종료
+                }
+                elem = next;  // 다음 요소로 이동
+                break;
+        }
     }
-    /**
-     * mapid == 특정 mapid가 주어진 경우,
-     * 해당 mapid에 매핑된 파일에 대해서만 같은 작업을 처리하고 종료한다.
-     */
-    else if(mapid == mmap_file->mapid){
-      rm_spt_umap(mmap_file);
-      file_close(mmap_file->file);
-      temp = list_prev(elem);
-      list_remove(elem);
-      elem = temp;
-      free(mmap_file); 
-      break;
-    }
-  }
+}
 
+static void free_mmap_file(struct mmap_file *mmap_file, struct list_elem **elem) {
+    if (!mmap_file || !elem || !*elem) {
+        return;  // 유효하지 않은 입력을 처리하지 않고 반환
+    }
+
+    /* 매핑된 페이지 해제 */
+    rm_spt_umap(mmap_file);
+
+    /* 파일 닫기 */
+    file_close(mmap_file->file);
+
+    /* 리스트에서 제거 및 메모리 해제 */
+    list_remove(*elem);
+    free(mmap_file);
 }
 
 static void rm_spt_umap(struct mmap_file* mmap_file) {
