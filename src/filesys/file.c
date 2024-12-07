@@ -168,3 +168,10 @@ file_tell (struct file *file)
   ASSERT (file != NULL);
   return file->pos;
 }
+
+bool
+return_deny_write (struct file *file) 
+{
+  ASSERT (file != NULL);
+  return file->deny_write;
+}
