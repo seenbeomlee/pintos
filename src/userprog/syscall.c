@@ -16,8 +16,11 @@ static void free_mmap_file(struct mmap_file *mmap_file, struct list_elem **elem)
 static void cleanup_mmap_pages(struct mmap_file* mmap_file);
 static void handle_page_removal(struct spt_entry *spe, uint32_t *pagedir);
 
+static int perform_file_action(int fd, void* buffer, unsigned size, bool is_write);
+static struct file* get_valid_file(int fd);
+
 static void check_address(void* vaddr);
-static void check_buffer(const char *buffer, unsigned size, bool to_write);
+static void check_buffer(const char *buffer, unsigned size, bool is_write);
 
 struct lock filesys_lock;
 
@@ -164,73 +167,83 @@ wait(pid_t pid)
   return process_wait(pid); // 특정 자식 프로세스의 종료를 기다리고 
 }
 
-int read(int fd, void *buffer, unsigned int size) {
+// is_write에 따라서 read or write 수행
+static int perform_file_action(int fd, void* buffer, unsigned size, bool is_write) {
+  struct file* f = get_valid_file(fd);
+  
+  check_buffer(buffer, size, !is_write);
+
   int result;
-  uint8_t temp;
-  if (fd < 0 || fd == 1 || fd >= FDTABLE_SIZE) { exit(-1); }
-
-  // 버퍼가 유효한지 확인
-  check_buffer(buffer, size, 1);
-
   lock_acquire(&filesys_lock);
-  if (fd == 0) {
-    for (result = 0; (result < size) && (temp = input_getc()); result++) {
-      *(uint8_t *)(buffer + result) = temp;
-    }
+  if (is_write) {
+    result = file_write(f, buffer, size);
   } else {
-    struct file* f = process_get_file(fd);
-    if (f == NULL) {
-      lock_release(&filesys_lock);
-      exit(-1);
-    }
     result = file_read(f, buffer, size);
   }
   lock_release(&filesys_lock);
+
   return result;
 }
 
-int write(int fd, const void *buffer, unsigned size) {
-  int file_write_result;
-  struct file* f;
-  if (fd <= 0 || fd >= FDTABLE_SIZE) { exit(-1); }
-
-  // 버퍼가 유효한지 확인
-  check_buffer(buffer, size, 0);
-
-  lock_acquire(&filesys_lock);
-  if (fd == 1) {
-    putbuf(buffer, size);
-    lock_release(&filesys_lock);
-    return size;
-  } else {
-    f = process_get_file(fd);
-    if (f == NULL) {
-      lock_release(&filesys_lock);
-      exit(-1);
-    }
-    file_write_result = file_write(f, buffer, size);
-    lock_release(&filesys_lock);
-    return file_write_result;
+// 파일 디스크립터 유효 범위 검증
+static struct file* get_valid_file(int fd) {
+  if (fd < 0 || fd >= FDTABLE_SIZE) {
+    exit(-1);
   }
+  struct file* f = process_get_file(fd);
+  if (f == NULL) {
+    exit(-1);
+  }
+  return f;
+}
+
+int read(int fd, void* buffer, unsigned int size) {
+  if (fd == 0) { // stdin 처리
+    unsigned int result = 0;
+    uint8_t temp;
+
+    lock_acquire(&filesys_lock);
+    while (result < size) {
+      temp = input_getc();
+      ((uint8_t*)buffer)[result++] = temp;
+    }
+    lock_release(&filesys_lock);
+
+    return result;
+  }
+
+  // 일반 파일 읽기
+  return perform_file_action(fd, buffer, size, false);
+}
+
+int write(int fd, const void* buffer, unsigned size) {
+  if (fd == 1) { // stdout 처리
+    putbuf(buffer, size);
+    return size;
+  }
+
+  // 일반 파일 쓰기
+  return perform_file_action(fd, (void*)buffer, size, true);
 }
 
 int open(const char* file) {
-  int fd;
-  struct file* f;
   if (file == NULL) { exit(-1); }
+
   lock_acquire(&filesys_lock);
-  f = filesys_open(file);
+  struct file* f = filesys_open(file);
   if (f == NULL) {
     lock_release(&filesys_lock);
     return -1;
   }
-  fd = process_add_file(f);
+
+  int fd = process_add_file(f);
   lock_release(&filesys_lock);
+
   return fd;
 }
 
 void close(int fd) {
-  process_close_file(fd); // 함수명을 수정
+  process_close_file(fd);
 }
 
 bool 
@@ -521,14 +534,12 @@ static void check_address(void* vaddr) {
  * 2. spt 활용하여 각 주소가 spt에 존재하는지 확인, 해당 페이지가 로드되었는지 확인
  * 3. 쓰기 권한 확인 (to_write)
  */
-static void check_buffer(const char *buffer, unsigned size, bool to_write) {
+static void check_buffer(const char *buffer, unsigned size, bool is_write) {
     ASSERT(buffer != NULL);
-
-    unsigned i;
     struct spt_entry *spe;
 
     /* 버퍼의 모든 바이트를 검사 */
-    for (i = 0; i < size; i++) {
+    for (int i = 0; i < size; i++) {
         void *addr = (void *)(buffer + i);
 
         /* 주소가 사용자 메모리 공간에 있는지 확인 */
@@ -543,7 +554,7 @@ static void check_buffer(const char *buffer, unsigned size, bool to_write) {
         }
 
         /* 쓰기 요청 시 페이지의 쓰기 권한 확인 */
-        if (to_write && !spe->writable) {
+        if (is_write && !spe->writable) {
             exit(-1);
         }
     }
