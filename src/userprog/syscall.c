@@ -351,7 +351,7 @@ int mmap(int fd, void* addr){
   int length = file_length (mmap_file->file);
   while (length > 0)
     {
-      if (find_spe (addr)) // 중복된 매핑 방지
+      if (lookup_spt_entry (addr)) // 중복된 매핑 방지
         return -1;
 
       struct spt_entry *spe = (struct spt_entry *)malloc (sizeof (struct spt_entry));
@@ -501,7 +501,7 @@ static void check_buffer(const char *buffer, unsigned size, bool to_write) {
         check_address(addr);
 
         /* SPT에서 엔트리를 검색 */
-        spe = find_spe(addr);
+        spe = lookup_spt_entry(addr);
 
         /* 페이지가 로드되지 않았거나 유효하지 않으면 예외 처리 */
         if (spe == NULL) {

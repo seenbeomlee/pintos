@@ -56,6 +56,8 @@ struct spt_entry {
     size_t swap_slot;           // 스왑 슬롯 번호
 };
 
+/* ********** ********** ********** ********** ********** ********** ********** ***********/
+
 /**
  * Supplementary Page Table (SPT) 관리 함수
  * process.c > start_process() 에서 사용된다.
@@ -66,12 +68,20 @@ struct spt_entry {
  */
 void spt_init(struct hash* supplementary_table);
 
+/* ********** ********** ********** ********** ********** ********** ********** ***********/
+
 bool insert_spe(struct hash* supplementary_table, struct spt_entry* new_entry);
 bool delete_spe(struct hash* supplementary_table, struct spt_entry* target_entry);
 
-struct spt_entry* find_spe(void* virtual_address);
+/* ********** ********** ********** ********** ********** ********** ********** ***********/
+
+struct spt_entry* lookup_spt_entry(void* virtual_address);
+
+/* ********** ********** ********** ********** ********** ********** ********** ***********/
 
 void spt_destroy(struct hash* supplementary_table);
+
+/* ********** ********** ********** ********** ********** ********** ********** ***********/
 
 // 파일 로드 함수
 // excepion.h가 아닌 page.h에 선언된 이유는 파일 로드 작업이 VM 시스템의 일환으로 spt에 맞춰져 있기 때문이다.

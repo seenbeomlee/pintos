@@ -12,7 +12,7 @@ extern struct lock filesys_lock;
 static unsigned spt_hash_func(const struct hash_elem* element, void* aux);
 static bool spt_less_func(const struct hash_elem* first, const struct hash_elem* second, void* aux);
 
-static struct hash_elem* find_hash_elem(struct hash* supplementary_table, void* virtual_address);
+static struct hash_elem* find_hash_element(struct hash* spt_table, void* virtual_address);
 
 static void spt_destroy_func(struct hash_elem* element, void* aux UNUSED);
 static void release_spt_entry(struct spt_entry* entry);
@@ -41,6 +41,8 @@ static bool spt_less_func(const struct hash_elem* first, const struct hash_elem*
     return entry_a->vaddr < entry_b->vaddr;
 }
 
+/* ********** ********** ********** ********** ********** ********** ********** ***********/
+
 // Supplementary Page Entry 삽입
 bool insert_spe(struct hash* supplementary_table, struct spt_entry* new_entry) {
     ASSERT(supplementary_table != NULL);
@@ -62,20 +64,32 @@ bool delete_spe(struct hash* supplementary_table, struct spt_entry* target_entry
     return true;
 }
 
+/* ********** ********** ********** ********** ********** ********** ********** ***********/
+
 // Supplementary Page Entry 검색
-struct spt_entry* find_spe(void* virtual_address) {
-    struct hash* spt = &(thread_current()->spt);
-    struct hash_elem* element = find_hash_elem(spt, virtual_address);
-    return element ? hash_entry(element, struct spt_entry, elem) : NULL;
+struct spt_entry* lookup_spt_entry(void* virtual_address) {
+  struct hash* spt_table = &(thread_current()->spt); // 현재 스레드의 SPT
+  struct hash_elem* hash_elem = find_hash_element(spt_table, virtual_address);
+
+  // 해시 엔트리가 존재하면 spt_entry로 변환하여 반환, 없으면 NULL 반환
+  return hash_elem ? hash_entry(hash_elem, struct spt_entry, elem) : NULL;
 }
 
 // 해시 엔트리 검색
-static struct hash_elem* find_hash_elem(struct hash* supplementary_table, void* virtual_address) {
-    struct spt_entry temp_entry;
-    temp_entry.vaddr = pg_round_down(virtual_address);
-    ASSERT(pg_ofs(temp_entry.vaddr) == 0);
-    return hash_find(supplementary_table, &temp_entry.elem);
+static struct hash_elem* find_hash_element(struct hash* spt_table, void* virtual_address) {
+  struct spt_entry temp_entry;
+
+  // 페이지 정렬된 주소로 임시 엔트리 생성
+  temp_entry.vaddr = pg_round_down(virtual_address);
+
+  // 가상 주소가 페이지 정렬되었는지 검증
+  ASSERT(pg_ofs(temp_entry.vaddr) == 0);
+
+  // SPT 테이블에서 해시 엔트리 검색
+  return hash_find(spt_table, &temp_entry.elem);
 }
+
+/* ********** ********** ********** ********** ********** ********** ********** ***********/
 
 // Hash 테이블 제거
 void spt_destroy(struct hash* supplementary_table) {
@@ -119,6 +133,7 @@ static void handle_loaded_page(struct spt_entry* entry) {
   free(entry);
 }
 
+/* ********** ********** ********** ********** ********** ********** ********** ***********/
 
 // 파일에서 데이터를 로드하여 물리 메모리에 저장
 bool load_file(void* kernel_address, struct spt_entry* page_entry) {
