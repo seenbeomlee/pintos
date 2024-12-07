@@ -6,11 +6,18 @@
 #include "threads/vaddr.h"
 
 static void syscall_handler (struct intr_frame *);
-static void check_address(void* vaddr);
-static void check_buffer(const char *buffer, unsigned size, bool to_write);
+
+static bool is_valid_mmap_request(int fd, void* addr);
+static struct mmap_file* create_mmap_file(int fd);
+static bool map_pages_from_file(struct mmap_file* mmap_file, void* addr);
+static struct spt_entry* create_spt_entry_for_mmap(struct mmap_file* mmap_file, void* addr, size_t offset, int length);
+
 static void free_mmap_file(struct mmap_file *mmap_file, struct list_elem **elem);
 static void cleanup_mmap_pages(struct mmap_file* mmap_file);
 static void handle_page_removal(struct spt_entry *spe, uint32_t *pagedir);
+
+static void check_address(void* vaddr);
+static void check_buffer(const char *buffer, unsigned size, bool to_write);
 
 struct lock filesys_lock;
 
@@ -321,61 +328,136 @@ tell (int fd)
 
 /* ********** ********** ********** procject 3 : virtual memory ********** ********** ***********/
 
-int mmap(int fd, void* addr){
-  struct mmap_file *mmap_file;
-  size_t offset = 0;
-
-  if (!addr) // addr이 NULL 값인지 확인
+int mmap(int fd, void* addr) {
+  // 요청 유효성 검증
+  if (!is_valid_mmap_request(fd, addr)) {
     return -1;
-  if (pg_ofs (addr) != 0) // addr이 페이지 정렬되어 있는지 확인
-    return -1;
-  if (is_user_vaddr (addr) == false) // addr가 사용자 주소 공간인지 확인
-    return -1;
+  }
 
   // 매핑 파일 구조체 생성
-  mmap_file = (struct mmap_file *)malloc (sizeof (struct mmap_file));
-  if (mmap_file == NULL)
+  struct mmap_file* mmap_file = create_mmap_file(fd);
+  if (mmap_file == NULL) {
     return -1;
+  }
 
-  memset (mmap_file, 0, sizeof(struct mmap_file));
-  list_init (&mmap_file->spe_list);
-  if (!(mmap_file->file = thread_current()->fd_table[fd]))
+  // 파일 매핑을 가상 메모리에 적용
+  if (!map_pages_from_file(mmap_file, addr)) {
+    free(mmap_file);
     return -1;
+  }
 
-  mmap_file->file = file_reopen(mmap_file->file); // 파일을 다시 열어서 독립된 핸들을 확보
-  mmap_file->mapid = thread_current ()->next_mapid++; // mapid 부여
-  list_push_back (&thread_current ()->mmap_list, &mmap_file->elem); // current thread의 mmap_list에 추가
+  // mmap 리스트에 추가
+  list_push_back(&thread_current()->mmap_list, &mmap_file->elem);
 
-  // 사용자가 지정한 가상 메모리 주소 'addr'를 기준으로, 매핑된 파일의 각 페이지에 대해 spt_entry를 생성하고 추가한다.
-  int length = file_length (mmap_file->file);
-  while (length > 0)
-    {
-      if (lookup_spt_entry (addr)) // 중복된 매핑 방지
-        return -1;
-
-      // 매핑된 파일의 각 페이지에 대해 spt_entry를 생성한다.
-      struct spt_entry *spe = (struct spt_entry *)malloc (sizeof (struct spt_entry));
-      memset (spe, 0, sizeof (struct spt_entry));
-
-      spe->type = VM_FILE;
-      spe->writable = true;
-      spe->vaddr = addr;
-      spe->offset = offset;
-      spe->read_bytes = length < PGSIZE ? length : PGSIZE;
-      spe->zero_bytes = PGSIZE - spe->read_bytes;
-      spe->file = mmap_file->file;
-
-      // insert_spt_entry를 호출하여, 매핑된 파일의 각 페이지를 spt에 추가한다.
-      insert_spt_entry (&thread_current ()->spt, spe);
-      list_push_back (&mmap_file->spe_list, &spe->mmap_elem);
-
-      addr += PGSIZE;
-      offset += PGSIZE;
-      length -= PGSIZE;
-    }
-
+  // 매핑 ID 반환
   return mmap_file->mapid;
 }
+
+// mmap 요청의 유효성을 확인하는 함수
+static bool is_valid_mmap_request(int fd, void* addr) {
+  // 주소가 NULL인지 확인
+  if (!addr) {
+    return false;
+  }
+
+  // 주소가 페이지 정렬되었는지 확인
+  if (pg_ofs(addr) != 0) {
+    return false;
+  }
+
+  // 주소가 사용자 공간인지 확인
+  if (!is_user_vaddr(addr)) {
+    return false;
+  }
+
+  return true;
+}
+
+// mmap_file 구조체 생성 및 초기화
+static struct mmap_file* create_mmap_file(int fd) {
+  // 메모리 할당
+  struct mmap_file* mmap_file = malloc(sizeof(struct mmap_file));
+  if (!mmap_file) {
+    return NULL; // 메모리 할당 실패
+  }
+
+  // 구조체 초기화
+  memset(mmap_file, 0, sizeof(struct mmap_file));
+  list_init(&mmap_file->spe_list);
+
+  // 파일 핸들 확인
+  struct file* file = thread_current()->fd_table[fd];
+  if (!file) {
+    free(mmap_file);
+    return NULL; // 유효하지 않은 파일 디스크립터
+  }
+
+  // 파일 핸들 복제
+  mmap_file->file = file_reopen(file);
+  if (!mmap_file->file) {
+    free(mmap_file);
+    return NULL; // 파일 복제 실패
+  }
+
+  // 고유한 매핑 ID 설정
+  mmap_file->mapid = thread_current()->next_mapid++;
+  return mmap_file;
+}
+
+// mmap_file 구조체와 가상 메모리 주소를 기반으로 파일 매핑
+static bool map_pages_from_file(struct mmap_file* mmap_file, void* addr) {
+  int length = file_length(mmap_file->file); // 파일 길이 계산
+  size_t offset = 0;
+
+  while (length > 0) {
+    // 중복 매핑 방지: 이미 해당 주소에 엔트리가 존재하면 실패
+    if (lookup_spt_entry(addr)) {
+      return false;
+    }
+
+    // SPT 엔트리 생성
+    struct spt_entry* spe = create_spt_entry_for_mmap(mmap_file, addr, offset, length);
+    if (!spe) {
+      return false; // 엔트리 생성 실패
+    }
+
+    // SPT에 엔트리 추가
+    insert_spt_entry(&thread_current()->spt, spe);
+
+    // mmap_file의 spe_list에 추가
+    list_push_back(&mmap_file->spe_list, &spe->mmap_elem);
+
+    // 다음 페이지로 이동
+    addr += PGSIZE;
+    offset += PGSIZE;
+    length -= PGSIZE;
+  }
+
+  return true; // 파일 매핑 성공
+}
+
+// 파일 매핑을 위한 SPT 엔트리 생성
+static struct spt_entry* create_spt_entry_for_mmap(struct mmap_file* mmap_file, void* addr, size_t offset, int length) {
+  // 메모리 할당
+  struct spt_entry* spe = malloc(sizeof(struct spt_entry));
+  if (!spe) {
+    return NULL; // 메모리 할당 실패
+  }
+
+  // 엔트리 초기화
+  memset(spe, 0, sizeof(struct spt_entry));
+  spe->type = VM_FILE; // 매핑된 파일 타입
+  spe->writable = true; // 쓰기 가능 여부
+  spe->vaddr = addr; // 매핑될 가상 주소
+  spe->offset = offset; // 파일 내 오프셋
+  spe->read_bytes = length < PGSIZE ? length : PGSIZE; // 읽을 바이트 크기
+  spe->zero_bytes = PGSIZE - spe->read_bytes; // 남은 공간을 0으로 초기화
+  spe->file = mmap_file->file; // 파일 핸들 설정
+
+  return spe; // 초기화된 SPT 엔트리 반환
+}
+
+/* ********** ********** ********** ********** ********** ********** ********** ***********/
 
 void munmap(int mapid) {
     struct mmap_file *mmap_file;  // 매핑된 파일 정보를 담는 구조체
