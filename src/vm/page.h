@@ -7,9 +7,19 @@
 #include <list.h>
 #include "threads/vaddr.h"
 
-#define VM_BIN 0
-#define VM_FILE 1
-#define VM_ANON 2
+// 페이지 타입 정의
+
+// 실행 파일과 연관된 페이지 타입
+// 프로그램의 코드, 읽기 전용 데이터, 초기화된 전역 변수 등이 포함된 페이지
+#define VM_BIN 0  
+
+// 메모리 매핑된 파일과 연관된 페이지 타입
+// mmap 시스템 호출로 매핑된 파일의 일부를 메모리에 로드하는 페이지
+#define VM_FILE 1  
+
+// 익명 페이지 타입
+// 파일과 무관한 페이지로, 동적 메모리 할당(malloc), 스택 확장 등에서 사용
+#define VM_ANON 2  
 
 // Memory-mapped file 구조체
 struct mmap_file {
@@ -38,7 +48,7 @@ struct spt_entry {
     struct file* file;          // 가상 주소와 매핑된 파일
     size_t offset;              // 파일에서 읽어야 할 위치
     size_t read_bytes;          // 페이지에 쓰여 있는 데이터 크기
-    size_t zero_bytes;          // 0으로 채워야 할 페이지의 나머지 크기
+    size_t zero_bytes;          // 0으로 채워야 할 페이지의 (읽지 않은, 쓰이지 않은) 나머지 크기
 
     struct hash_elem elem;      // 해시 테이블에 저장될 hash_elem
     struct list_elem mmap_elem; // mmap 리스트와 연결된 elem
@@ -46,15 +56,25 @@ struct spt_entry {
     size_t swap_slot;           // 스왑 슬롯 번호
 };
 
-// Supplementary Page Table (SPT) 관리 함수
+/**
+ * Supplementary Page Table (SPT) 관리 함수
+ * process.c > start_process() 에서 사용된다.
+ * 프로세스가 사용하는 가상 메모리 구조를 초기화하기 위해서 호출한다.
+ * Supplemental Page Table(SPT)은 각 process가 별도로 관리해야 하므로, 
+ * start_process()가 호출될 때 현재 process의 spt를 초기화한다.
+ * 이를 통해 프로세스 간 가상 메모리 충돌을 방지하고 독립적ㅇ니 메모리 관리를 보장한다.
+ */
 void spt_init(struct hash* supplementary_table);
 
 bool insert_spe(struct hash* supplementary_table, struct spt_entry* new_entry);
 bool delete_spe(struct hash* supplementary_table, struct spt_entry* target_entry);
+
 struct spt_entry* find_spe(void* virtual_address);
+
 void spt_destroy(struct hash* supplementary_table);
 
 // 파일 로드 함수
+// excepion.h가 아닌 page.h에 선언된 이유는 파일 로드 작업이 VM 시스템의 일환으로 spt에 맞춰져 있기 때문이다.
 bool load_file(void* kernel_address, struct spt_entry* page_entry);
 
 #endif /* VM_PAGE_H */

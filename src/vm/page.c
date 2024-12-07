@@ -18,6 +18,9 @@ static void spt_destroy_func(struct hash_elem* element, void* aux UNUSED);
 static void release_spt_entry(struct spt_entry* entry);
 static void handle_loaded_page(struct spt_entry* entry);
 
+static bool read_file_to_memory(void* kernel_address, struct spt_entry* page_entry);
+static void zero_unused_memory(void* kernel_address, size_t read_bytes, size_t zero_bytes);
+
 // Hash 테이블 초기화
 void spt_init(struct hash* supplementary_table) {
     ASSERT(supplementary_table != NULL);
@@ -119,15 +122,47 @@ static void handle_loaded_page(struct spt_entry* entry) {
 
 // 파일에서 데이터를 로드하여 물리 메모리에 저장
 bool load_file(void* kernel_address, struct spt_entry* page_entry) {
-    ASSERT(kernel_address != NULL);
-    ASSERT(page_entry != NULL);
-    ASSERT(page_entry->type == VM_BIN || page_entry->type == VM_FILE);
+  // 물리 메모리 주소가 유효한지 확인
+  // kernel_address가 NULL이면 메모리에 데이터를 저장할 수 없으므로 프로그램 중단
+  ASSERT(kernel_address != NULL);
 
-    int bytes_read = file_read_at(page_entry->file, kernel_address, page_entry->read_bytes, page_entry->offset);
-    if (bytes_read != (int)page_entry->read_bytes) {
-        return false;
-    }
+  // Supplementary Page Table(SPT) 엔트리가 유효한지 확인
+  // page_entry가 NULL이면 파일 데이터를 읽을 메타정보가 없으므로 프로그램 중단
+  ASSERT(page_entry != NULL);
 
-    memset(kernel_address + page_entry->read_bytes, 0, page_entry->zero_bytes);
-    return true;
+  // Supplementary Page Table(SPT) 엔트리의 페이지 타입이 올바른지 확인
+  // 지원하는 타입은 VM_BIN(실행 파일)과 VM_FILE(메모리 매핑 파일)만 해당
+  // 다른 타입(VM_ANON 등)이 들어오면 load_file이 처리할 수 없으므로, 이를 사전에 차단
+  ASSERT(page_entry->type == VM_BIN || page_entry->type == VM_FILE);
+
+  // 파일에서 읽기
+  if (!read_file_to_memory(kernel_address, page_entry)) {
+    return false;
+  }
+
+  // 남은 공간(zero_bytes)을 0으로 초기화
+  zero_unused_memory(kernel_address, page_entry->read_bytes, page_entry->zero_bytes);
+
+  return true;
+}
+
+// 파일에서 데이터를 물리 메모리에 읽기
+static bool read_file_to_memory(void* kernel_address, struct spt_entry* page_entry) {
+  int bytes_read = file_read_at(
+    page_entry->file,
+    kernel_address,
+    page_entry->read_bytes,
+    page_entry->offset
+  );
+
+  // 실제 값 : bytes_read == 실제로 파일에서 읽어들인 바이트 수
+  // 예상 값 : page_entry->read_bytes == 해당 페이지에서 읽어야 할 데이터 크기
+  return bytes_read == (int)page_entry->read_bytes;
+}
+
+// 물리 메모리에서 남은 공간 0으로 초기화
+static void zero_unused_memory(void* kernel_address, size_t read_bytes, size_t zero_bytes) {
+  // kernel_address + read_bytes : 파일 데이터를 읽어들인 직후의 메모리 위치, 즉, 읽지 않은 페이지의 시작 부분
+  // zero_bytes : 해당 영역의 크기만큼 메모리를 0으로 채운다.
+  memset(kernel_address + read_bytes, 0, zero_bytes);
 }
