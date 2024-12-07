@@ -121,15 +121,10 @@ struct thread
     /* child list */
     struct list child_threads_list;
 
-    /* 프로세스의 프로그램 메모리 적재 여부 확인 */
-    bool load_flag;
-
     /* exit semaphore, 자식 프로세스 종료 대기를 위한 세마포어 */
     struct semaphore exit_sema;
     /* wait semaphore, 자식 프로세스 생성 대기 */
     struct semaphore load_sema;
-    /* for multi-oom 삭제될 때 부모의 자식 리스트에서 삭제하기 위해 메모리를 남겨두는 세마포어 */
-    struct semaphore remove_sema;
     
     /* 현재 실행중인 파일 for Denying Write to Executable */
     struct file* exec_file;

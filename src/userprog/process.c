@@ -39,9 +39,6 @@ process_execute (const char *file_name)
   int size = strlen(file_name);
   char* parsed_fn[size + 1]; // 왜냐하면, size는 문자열의 길이이므로 '\0'을 삽입하기 위해서는 +1을 해주어야 한다.
 
-  struct list_elem* elem;
-  struct thread* curr = thread_current();
-
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
@@ -65,18 +62,6 @@ process_execute (const char *file_name)
   tid = thread_create (parsed_fn, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
-
-  /** multi-oom
-   * 강제 종료된 child_list_elem이 있는지 검사하여 process_wait()를 통해 실패한 프로세스를 회수한다.
-   * load_flag == false면 강제 종료되었다고 인식한다. load가 되지 못하고 종료된 프로세스를 기다린다.
-   */
-  struct thread* iter;
-  for(elem=list_begin(&(curr->child_threads_list)); elem!=list_end(&(curr->child_threads_list)); elem=list_next(elem)){
-    iter = list_entry(elem, struct thread, child_thread_list_elem);
-    if(iter->load_flag==false){
-      return process_wait(tid);
-    }
-  }
 
   return tid;
 }
@@ -129,9 +114,6 @@ start_process (void *file_name_)
 
   /* 파일 로드에 성공하면, setting_esp 을 진행한다. */
   if (success) {
-    /* 메모리 적재 성공 시 프로세스 디스크립터에 메모리 적재 성공 */
-    thread_current()->load_flag=true;
-
     setting_esp(file_name, &if_.esp);
   }
 
@@ -144,16 +126,7 @@ start_process (void *file_name_)
 */
   palloc_free_page (file_name);
   if (!success) {
-    /* 메모리 적재 실패 시 프로세스 디스크립터에 메모리 적재 실패 */
-    thread_current()->load_flag=false;
-
-    /** multi-oom 
-     * start_process()에서 load()에 실패했을 때, thread_exit() 대신 exit(-1)을 해야한다.
-     * exit() system call을 통해 프로세스를 종료시킴으로써 exit_status를 저장해 놓아야 부모 프로세스가
-     * 자식 프로세스의 exit_status를 확인할 수 있기 때문이다. (thread_exit()만 하면 exit_status 저장되지 않는다.)
-    */
-    // thread_exit ();
-    exit(-1);
+    thread_exit ();
   }
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -185,19 +158,16 @@ process_wait (tid_t child_tid UNUSED)
   if(child_thread == NULL) { // 자식이 아니라면 -1을 반환한다.
     return child_exit_status;
   }
-
-  sema_down(&(child_thread->exit_sema)); // 자식 프로세스가 종료될 때 까지 대기한다. (process_exit에서 자식이 종료될 때 sema_up 해줄 것이다.)
-  child_exit_status = child_thread->exit_status;
-  /** 
-   * child_thread의 exit_status를 받기 위해서, child thread의 memory를 삭제하는 단계를 child thread_exit() 시가 아니라,
-   * 부모의 process_wait()가 재개된 시점으로 한다.. 맞나?
-   */
-  list_remove(&(child_thread->child_thread_list_elem)); // 자식이 종료됨을 알리는 'load_sema' signal을 받으면 현재 스레드(부모)의 자식 리스트에서 제거한다.
-  
-  /** multi-oom */
-  sema_up(&(child_thread->remove_sema));
-
-  return child_exit_status; // 자식의 exit_status를 반환한다.
+  else {
+    sema_down(&(child_thread->exit_sema)); // 자식 프로세스가 종료될 때 까지 대기한다. (process_exit에서 자식이 종료될 때 sema_up 해줄 것이다.)
+    child_exit_status = child_thread->exit_status;
+    /** 
+     * child_thread의 exit_status를 받기 위해서, child thread의 memory를 삭제하는 단계를 child thread_exit() 시가 아니라,
+     * 부모의 process_wait()가 재개된 시점으로 한다.. 맞나?
+     */
+    list_remove(&(child_thread->child_thread_list_elem)); // 자식이 종료됨을 알리는 'load_sema' signal을 받으면 현재 스레드(부모)의 자식 리스트에서 제거한다.
+    return child_exit_status; // 자식의 exit_status를 반환한다.
+  }
 }
 
 /* Free the current process's resources. */
@@ -207,8 +177,25 @@ process_exit (void)
   struct thread *curr = thread_current ();
   uint32_t *pd;
 
-  struct thread* child_thread;
-  struct list_elem* elem;
+  /**
+   * 모든 메모리 매핑된 파일을 해제한다.
+   * mapid == -1로 전달되면, munmap 함수는 현재 thread에 매핑된 모든 파일을 해제하도록 구현했다.
+   * process_exit() 시, 매핑된 파일들이 더 이상 유효하지 않으므로 모든 매핑을 해제해야 한다.
+   * spt와 파일 시스템 자원을 정리하지 않으면 메모리 누수와 파일 접근 오류가 발생할 수 있다.
+   */
+  munmap(-1);
+  /**
+   * 현재 thread의 spt 엔트리를 정리하고 자원을 반환한다. (즉, spt 전체 정리)
+   * 양자의 순서는 바뀌면 안된다. 두 작업은 서로 의존적이기 때문이다.
+   * 1. munmap(-1)은 mmap_list를 순회하면서
+   *  (1) spt 엔트리 제거, rm_spt_umap()을 통해 매핑된 파일과 관련된 spt 엔트리를 삭제
+   *  (2) 파일 닫기 및 리스트 정리, 파일 시스템과 관련된 리소스를 정리
+   * 즉, spt의 일부 엔트리를 특정한 방식으로 삭제하는 작업이므로, spt 전체를 제거하기 전에 호출되어야 한다.
+   * 
+   * 만일, 2. spt_destroy가 먼저 호출되면, spt의 메모리 공간이 해제된다.
+   * 그렇다면, 이후 munmap(-1)에서 rm_spt_umap()을 호출하여 spt를 참조하려고 할 때 잘못된 메모리에 접근하게 된다.
+   */
+  spt_destroy(&(curr->spt));
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -226,15 +213,6 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
-
-  /** multi-oom
-   * 부모 프로세스는 절대 자식 프로세스보다 먼저 죽으면 안된다.
-   * 자식 프로세스가 존재할 경우, 부모 프로세스를 종료하지 않고 대기하도록 한다.
-   */
-  for(elem=list_begin(&(curr->child_threads_list)); elem!=list_end(&(curr->child_threads_list)); elem=list_next(elem)){
-    child_thread=list_entry(elem, struct thread, child_thread_list_elem);
-    process_wait(child_thread->tid);
-  }
 
 /**
  * 0 ; STDIN
@@ -533,8 +511,8 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage, // load_segment는 �
   file_seek (file, ofs);
   while (read_bytes > 0 || zero_bytes > 0) 
     {
-      /* Calculate how to fill this page.
-         We will read PAGE_READ_BYTES bytes from FILE
+        /* Calculate how to fill this page.
+         We will read xrPAGE_READ_BYTES bytes from FILE
          and zero the final PAGE_ZERO_BYTES bytes. */
         /* 현재 페이지에서 읽을 바이트와 0으로 채울 바이트 계산 */
         size_t chunk_to_read = read_bytes < PGSIZE ? read_bytes : PGSIZE; // 현재 페이지에서 읽을 데이터 크기

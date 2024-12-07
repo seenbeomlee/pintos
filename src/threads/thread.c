@@ -293,21 +293,12 @@ thread_exit (void)
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
   intr_disable ();
-  struct thread* curr = thread_current ();
-  list_remove (&curr->allelem);
-  
-  // 현재 종료시키는 thread의 parent thread가 있다면, 부모 thread의 wait를 중단시킨다.
-  // if (t->parent_thread_pointer != NULL) { // 현재 종료시키는 thread의 parent thread가 있다면, 부모 thread의 wait를 중단시킨다.
-  sema_up(&(curr->exit_sema));
-  // }
-
-  /** multi-oom
-   * thread_exit()에서 remove_sema를 down시키고, process_wait()에서
-   * 해당하는 자식 프로세스가 삭제되면 remove_sema를 up시킨다.
-   */
-  sema_down(&(curr->remove_sema));
-
-  curr->status = THREAD_DYING;
+  struct thread* t = thread_current ();
+  list_remove (&t->allelem);
+  if (t->parent_thread_pointer != NULL) { // 현재 종료시키는 thread의 parent thread가 있다면, 부모 thread의 wait를 중단시킨다.
+    sema_up(&(t->exit_sema));
+  }
+  t->status = THREAD_DYING;
   schedule ();
   NOT_REACHED ();
 }
@@ -485,12 +476,9 @@ init_thread (struct thread *t, const char *name, int priority)
   intr_set_level (old_level);
 
 #ifdef USERPROG
-  // multi-oom 추가
-  t->load_flag = true;
 
   sema_init(&(t->exit_sema), 0);
   sema_init(&(t->load_sema), 0);
-  sema_init(&(t->remove_sema), 0);
 
   list_init(&(t->child_threads_list));
 
@@ -585,8 +573,6 @@ thread_schedule_tail (struct thread *prev)
     {
       ASSERT (prev != cur);
       // palloc_free_page (prev);
-      /** multi-oom */
-      palloc_free_page (prev);
     }
 }
 
