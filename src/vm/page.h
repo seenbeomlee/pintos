@@ -70,8 +70,8 @@ void spt_init(struct hash* supplementary_table);
 
 /* ********** ********** ********** ********** ********** ********** ********** ***********/
 
-bool insert_spe(struct hash* supplementary_table, struct spt_entry* new_entry);
-bool delete_spe(struct hash* supplementary_table, struct spt_entry* target_entry);
+bool insert_spt_entry(struct hash* supplementary_table, struct spt_entry* new_entry);
+bool delete_spt_entry(struct hash* supplementary_table, struct spt_entry* target_entry);
 
 /* ********** ********** ********** ********** ********** ********** ********** ***********/
 

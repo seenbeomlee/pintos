@@ -44,24 +44,27 @@ static bool spt_less_func(const struct hash_elem* first, const struct hash_elem*
 /* ********** ********** ********** ********** ********** ********** ********** ***********/
 
 // Supplementary Page Entry 삽입
-bool insert_spe(struct hash* supplementary_table, struct spt_entry* new_entry) {
-    ASSERT(supplementary_table != NULL);
-    ASSERT(new_entry != NULL);
-    ASSERT(pg_ofs(new_entry->vaddr) == 0);
+bool insert_spt_entry(struct hash* supplementary_table, struct spt_entry* new_entry) {
+  ASSERT(supplementary_table != NULL); // Supplementary Page Table의 유효성 확인
+  ASSERT(new_entry != NULL);           // 새로운 엔트리의 유효성 확인
+  ASSERT(pg_ofs(new_entry->vaddr) == 0); // 페이지가 정렬된 주소인지 확인
 
-    return hash_insert(supplementary_table, &new_entry->elem) == NULL;
+  struct hash_elem* result = hash_insert(supplementary_table, &new_entry->elem);
+  return result == NULL; // NULL일 경우, 성공적으로 삽입됨을 반환
 }
 
 // Supplementary Page Entry 삭제
-bool delete_spe(struct hash* supplementary_table, struct spt_entry* target_entry) {
-    ASSERT(supplementary_table != NULL);
-    ASSERT(target_entry != NULL);
+bool delete_spt_entry(struct hash* supplementary_table, struct spt_entry* target_entry) {
+  ASSERT(supplementary_table != NULL); // Supplementary Page Table의 유효성 확인
+  ASSERT(target_entry != NULL);        // 대상 엔트리의 유효성 확인
 
-    if (!hash_delete(supplementary_table, &target_entry->elem)) {
-        return false;
-    }
-    free(target_entry);
-    return true;
+  struct hash_elem* result = hash_delete(supplementary_table, &target_entry->elem);
+  if (!result) {
+    return false; // 삭제 실패 시 false 반환
+  }
+
+  free(target_entry); // 메모리 해제
+  return true;        // 성공적으로 삭제됨
 }
 
 /* ********** ********** ********** ********** ********** ********** ********** ***********/

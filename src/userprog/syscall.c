@@ -365,7 +365,7 @@ int mmap(int fd, void* addr){
       spe->zero_bytes = PGSIZE - spe->read_bytes;
       spe->file = mmap_file->file;
 
-      insert_spe (&thread_current ()->spt, spe);
+      insert_spt_entry (&thread_current ()->spt, spe);
       list_push_back (&mmap_file->spe_list, &spe->mmap_elem);
 
       addr += PGSIZE;
@@ -437,7 +437,7 @@ static void cleanup_mmap_pages(struct mmap_file *mmap_file) {
 
         // 엔트리 제거
         list_remove(elem);
-        delete_spe(&t->spt, spe);
+        delete_spt_entry(&t->spt, spe);
     }
 }
 

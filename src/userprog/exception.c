@@ -252,7 +252,7 @@ static bool grow_user_stack(void* target_addr) {
   }
 
   initialize_spt_entry(new_entry, aligned_addr, new_frame); // SPT 엔트리 초기화
-  insert_spe(&(thread_current()->spt), new_entry); // SPT에 엔트리 추가
+  insert_spt_entry(&(thread_current()->spt), new_entry); // SPT에 엔트리 추가
 
   add_frame_to_lru(new_frame); // 프레임을 LRU 리스트에 추가
 

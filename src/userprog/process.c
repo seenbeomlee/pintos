@@ -533,35 +533,32 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       /* Calculate how to fill this page.
          We will read PAGE_READ_BYTES bytes from FILE
          and zero the final PAGE_ZERO_BYTES bytes. */
-      size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
-      size_t page_zero_bytes = PGSIZE - page_read_bytes;
+        /* 현재 페이지에서 읽을 바이트와 0으로 채울 바이트 계산 */
+        size_t chunk_to_read = read_bytes < PGSIZE ? read_bytes : PGSIZE; // 현재 페이지에서 읽을 데이터 크기
+        size_t chunk_to_zero = PGSIZE - chunk_to_read;                   // 남은 바이트를 0으로 초기화할 크기
 
-      /* Get a page of memory. */
-      uint8_t *kpage = palloc_get_page (PAL_USER);
-      if (kpage == NULL)
-        return false;
 
-      /* Load this page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-        {
-          palloc_free_page (kpage);
-          return false; 
-        }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
-
-      /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable)) 
-        {
-          palloc_free_page (kpage);
-          return false; 
+        /* 헬퍼 함수로 엔트리 생성 */
+        struct spt_entry *new_entry = create_spt_entry(reopened_file, ofs, upage,
+                                                       chunk_to_read, chunk_to_zero, writable);
+        if (!new_entry) {
+            return false; // SPT 엔트리 생성 실패 시 false 반환
         }
 
-      /* Advance. */
-      read_bytes -= page_read_bytes;
-      zero_bytes -= page_zero_bytes;
-      upage += PGSIZE;
+        /* Supplementary Page Table에 추가 */
+        if (!insert_spt_entry(&(thread_current()->spt), new_entry)) {
+            free(new_entry); // 실패 시 메모리 해제
+            return false; // SPT 엔트리 추가 실패 시 false 반환
+        }
+
+        /* 다음 페이지로 진행 */
+        read_bytes -= chunk_to_read; // 읽을 데이터 크기 감소
+        zero_bytes -= chunk_to_zero; // 0으로 채울 크기 감소
+        upage += PGSIZE;             // 다음 페이지의 가상 주소로 이동
+        ofs += chunk_to_read;        // 파일 오프셋을 다음 데이터로 이동
     }
-  return true;
+
+    return true;
 }
 
 /**
@@ -619,7 +616,7 @@ setup_stack(void **esp) // esp (stack pointer)를 세팅하는 함수이다.
     }
 
     /* 현재 스레드의 SPT에 엔트리 추가 */
-    insert_spe(&(thread_current()->spt), frame_page->spe); // Supplementary Page Table(SPT)에 엔트리 삽입
+    insert_spt_entry(&(thread_current()->spt), frame_page->spe); // Supplementary Page Table(SPT)에 엔트리 삽입
 
     /* 페이지를 LRU 리스트에 추가 */
     add_frame_to_lru(frame_page); // 페이지를 LRU(Least Recently Used) 리스트에 추가하여 교체 알고리즘 지원
