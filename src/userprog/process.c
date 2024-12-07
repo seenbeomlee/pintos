@@ -40,7 +40,6 @@ process_execute (const char *file_name)
   char* parsed_fn[size + 1]; // 왜냐하면, size는 문자열의 길이이므로 '\0'을 삽입하기 위해서는 +1을 해주어야 한다.
 
   struct list_elem* elem;
-  struct thread* t;
   struct thread* curr = thread_current();
 
   /* Make a copy of FILE_NAME.
@@ -71,9 +70,10 @@ process_execute (const char *file_name)
    * 강제 종료된 child_list_elem이 있는지 검사하여 process_wait()를 통해 실패한 프로세스를 회수한다.
    * load_flag == false면 강제 종료되었다고 인식한다. load가 되지 못하고 종료된 프로세스를 기다린다.
    */
+  struct thread* iter;
   for(elem=list_begin(&(curr->child_threads_list)); elem!=list_end(&(curr->child_threads_list)); elem=list_next(elem)){
-    t = list_entry(elem, struct thread, child_thread_list_elem);
-    if(t->load_flag==false){
+    iter = list_entry(elem, struct thread, child_thread_list_elem);
+    if(iter->load_flag==false){
       return process_wait(tid);
     }
   }
@@ -253,10 +253,10 @@ process_exit (void)
 void
 process_activate (void)
 {
-  struct thread *t = thread_current ();
+  struct thread *curr = thread_current ();
 
   /* Activate thread's page tables. */
-  pagedir_activate (t->pagedir);
+  pagedir_activate (curr->pagedir);
 
   /* Set thread's kernel stack for use in processing
      interrupts. */
@@ -339,7 +339,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 bool
 load (const char *file_name, void (**eip) (void), void **esp) 
 {
-  struct thread *t = thread_current ();
+  struct thread *curr = thread_current ();
   struct Elf32_Ehdr ehdr;
   struct file *file = NULL;
   off_t file_ofs;
@@ -348,8 +348,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
   /* Allocate and activate page directory. */
   // 각 프로세스가 실행이 될 때, 각 프로세스에 해당하는 VM(virtual memory)이 만들어져야 하므로,
 	// 이를 위해 페이지 테이블 엔트리를 생성하는 과정이 우선된다.
-  t->pagedir = pagedir_create ();
-  if (t->pagedir == NULL) 
+  curr->pagedir = pagedir_create ();
+  if (curr->pagedir == NULL) 
     goto done;
   process_activate ();
 
@@ -362,7 +362,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   /* Denying Write to Executable */
-  t->exec_file=file;
+  curr->exec_file=file;
   file_deny_write(file);
 
   /* Read and verify executable header. */
@@ -640,12 +640,12 @@ setup_stack(void **esp) // 사용자 프로그램 실행을 위한 esp (stack po
 static bool
 install_page (void *upage, void *kpage, bool writable)
 {
-  struct thread *t = thread_current ();
+  struct thread *curr = thread_current ();
 
   /* Verify that there's not already a page at that virtual
      address, then map our page there. */
-  return (pagedir_get_page (t->pagedir, upage) == NULL
-          && pagedir_set_page (t->pagedir, upage, kpage, writable));
+  return (pagedir_get_page (curr->pagedir, upage) == NULL
+          && pagedir_set_page (curr->pagedir, upage, kpage, writable));
 }
 
 void 
