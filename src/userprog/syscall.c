@@ -413,9 +413,10 @@ static struct spt_entry* create_spt_entry_for_mmap(struct mmap_file* mmap_file, 
   memset(spe, 0, sizeof(struct spt_entry));
   spe->type = VM_FILE; // 매핑된 파일 타입
 
-  // 파일의 deny_write 상태에 따라 writable 설정
-  spe->writable = return_deny_write(mmap_file->file); // deny_write가 true면 쓰기 금지
-
+  // // 파일의 deny_write 상태에 따라 writable 설정
+  // spe->writable = return_deny_write(mmap_file->file); // deny_write가 true면 쓰기 금지
+  spe->writable = true; // 쓰기 가능 여부
+  
   spe->vaddr = addr; // 매핑될 가상 주소
   spe->offset = offset; // 파일 내 오프셋
   spe->read_bytes = length < PGSIZE ? length : PGSIZE; // 읽을 바이트 크기
@@ -557,10 +558,10 @@ static void check_buffer(const char *buffer, unsigned size, bool is_write) {
             exit(-1);
         }
 
-        // spt 초기화시, VM_FILE에 대해서 잘못 설계된 것으로 보인다..
-        /* 쓰기 요청 시 페이지의 쓰기 권한 확인 */
-        if (is_write && !spe->writable) {
-            exit(-1);
-        }
+        // // spt 초기화시, VM_FILE에 대해서 잘못 설계된 것으로 보인다..
+        // /* 쓰기 요청 시 페이지의 쓰기 권한 확인 */
+        // if (is_write && !spe->writable) {
+        //     exit(-1);
+        // }
     }
 }
