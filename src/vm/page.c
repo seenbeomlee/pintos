@@ -23,22 +23,28 @@ static void zero_unused_memory(void* kernel_address, size_t read_bytes, size_t z
 
 // Hash 테이블 초기화
 void spt_init(struct hash* supplementary_table) {
-    ASSERT(supplementary_table != NULL);
-    hash_init(supplementary_table, spt_hash_func, spt_less_func, NULL);
+  ASSERT(supplementary_table != NULL);
+  hash_init(supplementary_table, spt_hash_func, spt_less_func, NULL); // spt를 해시 테이블로 설정한다.
 }
 
-// 해시 함수: 구조체에서 해시 값을 생성
-static unsigned spt_hash_func(const struct hash_elem* element, void* aux UNUSED) {
-    ASSERT(element != NULL);
-    struct spt_entry* entry = hash_entry(element, struct spt_entry, elem);
-    return hash_int((int)entry->vaddr);
+// 해시 생성 함수 : Supplementary Page Table (SPT) 엔트리의 가상 주소 기반 해시 생성
+static unsigned spt_hash_func(const struct hash_elem* hash_elem, void* aux UNUSED) {
+  ASSERT(hash_elem != NULL);
+  
+  // 해시 비교 함수 : 해시 엔트리에서 SPT 엔트리로 변환
+  struct spt_entry* entry = hash_entry(hash_elem, struct spt_entry, elem); // hash_elem에서 spt 구조체 추출
+  return hash_int((int)entry->vaddr); // 가상 주소(vaddr)를 정수로 변환하여 해시 생성
 }
 
-// 해시 비교 함수
-static bool spt_less_func(const struct hash_elem* first, const struct hash_elem* second, void* aux UNUSED) {
-    struct spt_entry* entry_a = hash_entry(first, struct spt_entry, elem);
-    struct spt_entry* entry_b = hash_entry(second, struct spt_entry, elem);
-    return entry_a->vaddr < entry_b->vaddr;
+// 해시 비교 함수: 두 SPT 엔트리의 가상 주소를 비교하여 오름차순으로 정렬 (작은 쪽이 앞으로 오도록))
+static bool spt_less_func(const struct hash_elem* a, const struct hash_elem* b, void* aux UNUSED) {
+  ASSERT(a != NULL && b != NULL);
+
+  // 해시 엔트리를 SPT 엔트리로 변환
+  struct spt_entry* entry_a = hash_entry(a, struct spt_entry, elem); // hash_elem에서 spt 구조체 추출
+  struct spt_entry* entry_b = hash_entry(b, struct spt_entry, elem);
+
+  return entry_a->vaddr < entry_b->vaddr; // 가상 주소 기준 정렬 (오름차순))
 }
 
 /* ********** ********** ********** ********** ********** ********** ********** ***********/

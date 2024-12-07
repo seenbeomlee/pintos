@@ -322,7 +322,6 @@ tell (int fd)
 /* ********** ********** ********** procject 3 : virtual memory ********** ********** ***********/
 
 int mmap(int fd, void* addr){
-
   struct mmap_file *mmap_file;
   size_t offset = 0;
 
@@ -347,13 +346,14 @@ int mmap(int fd, void* addr){
   mmap_file->mapid = thread_current ()->next_mapid++; // mapid 부여
   list_push_back (&thread_current ()->mmap_list, &mmap_file->elem); // current thread의 mmap_list에 추가
 
-  // spt 엔트리 생성 및 매핑
+  // 사용자가 지정한 가상 메모리 주소 'addr'를 기준으로, 매핑된 파일의 각 페이지에 대해 spt_entry를 생성하고 추가한다.
   int length = file_length (mmap_file->file);
   while (length > 0)
     {
       if (lookup_spt_entry (addr)) // 중복된 매핑 방지
         return -1;
 
+      // 매핑된 파일의 각 페이지에 대해 spt_entry를 생성한다.
       struct spt_entry *spe = (struct spt_entry *)malloc (sizeof (struct spt_entry));
       memset (spe, 0, sizeof (struct spt_entry));
 
@@ -365,6 +365,7 @@ int mmap(int fd, void* addr){
       spe->zero_bytes = PGSIZE - spe->read_bytes;
       spe->file = mmap_file->file;
 
+      // insert_spt_entry를 호출하여, 매핑된 파일의 각 페이지를 spt에 추가한다.
       insert_spt_entry (&thread_current ()->spt, spe);
       list_push_back (&mmap_file->spe_list, &spe->mmap_elem);
 
@@ -429,15 +430,15 @@ static void cleanup_mmap_pages(struct mmap_file *mmap_file) {
         next = list_next(elem);  // 다음 요소 저장
         struct spt_entry *spe = list_entry(elem, struct spt_entry, mmap_elem);
 
-        // 로드된 페이지 처리
-        if (spe->is_loaded) {
-            handle_page_removal(spe, t->pagedir);  // 헬퍼 함수 호출
-            spe->is_loaded = false;               // 상태 업데이트
+        // 매핑된 페이지의 상태 확인 및 처리
+        if (spe->is_loaded) { // 로그된 경우,
+            handle_page_removal(spe, t->pagedir);  // 메모리 정리
+            spe->is_loaded = false;               // is_loaded = false로 상태 업데이트
         }
 
         // 엔트리 제거
-        list_remove(elem);
-        delete_spt_entry(&t->spt, spe);
+        list_remove(elem); // mmap_file->spe_list에서 spt_entry를 제거
+        delete_spt_entry(&t->spt, spe); // spt에서 해당 spt_entry를 삭제하고, 관련 리소스를 해제(free)
     }
 }
 

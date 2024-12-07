@@ -251,8 +251,14 @@ static bool grow_user_stack(void* target_addr) {
     return false;
   }
 
-  initialize_spt_entry(new_entry, aligned_addr, new_frame); // SPT 엔트리 초기화
-  insert_spt_entry(&(thread_current()->spt), new_entry); // SPT에 엔트리 추가
+  /**
+   * 스택 확장(stack growth)은 가상 메모리의 특정 주소를 기준으로 새로운 페이지를 추가하는 작업이다.
+   * 1. 새로 할당된 페이지의 정보를 spt_entry로 초기화한 후, 
+   * 2. insert_spt_entry를 호출하여 spt에 등록한다.
+   * 이를 통해 스택 확장된 메모리도 프로세스의 메모리 관리 영역(spt)에 포함되어 관리된다.
+   */
+  initialize_spt_entry(new_entry, aligned_addr, new_frame); // 1. SPT 엔트리 초기화
+  insert_spt_entry(&(thread_current()->spt), new_entry); // 2. SPT에 엔트리 추가
 
   add_frame_to_lru(new_frame); // 프레임을 LRU 리스트에 추가
 

@@ -520,8 +520,8 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
    Return true if successful, false if a memory allocation error
    or disk read error occurs. */
 static bool
-load_segment (struct file *file, off_t ofs, uint8_t *upage,
-              uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
+load_segment(struct file *file, off_t ofs, uint8_t *upage, // load_segment는 실행 파일의 특정 세그먼트를 물리 메모리에 로드하는 작업
+             uint32_t read_bytes, uint32_t zero_bytes, bool writable)
 {
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
   ASSERT (pg_ofs (upage) == 0);
@@ -545,7 +545,8 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
             return false; // SPT 엔트리 생성 실패 시 false 반환
         }
 
-        /* Supplementary Page Table에 추가 */
+        // 각 페이지 정보를 spt에 기록하기 위해 insert_spt_entry를 호출한다.
+        // 실행 파일의 텍스트 및 데이터 세그먼트 정보를 spt에 저장하여 이후 페이지 폴트 발생 시 복구 및 관리가 가능하게 만든다.
         if (!insert_spt_entry(&(thread_current()->spt), new_entry)) {
             free(new_entry); // 실패 시 메모리 해제
             return false; // SPT 엔트리 추가 실패 시 false 반환
@@ -588,7 +589,7 @@ static struct spt_entry* initialize_spt_entry(void *vaddr, bool writable)
  * 2. lru 리스트 미사용
  */
 static bool
-setup_stack(void **esp) // esp (stack pointer)를 세팅하는 함수이다.
+setup_stack(void **esp) // 사용자 프로그램 실행을 위한 esp (stack pointer)를 세팅하는 함수이다.
 {
     struct page *frame_page; // 물리 페이지를 가리키는 구조체
     bool is_successful = false;
@@ -615,7 +616,7 @@ setup_stack(void **esp) // esp (stack pointer)를 세팅하는 함수이다.
         return false;
     }
 
-    /* 현재 스레드의 SPT에 엔트리 추가 */
+    // 스택의 최상단에 페이지를 할당하고, 해당 정보를 spt에 기록하기 위해 insert_spt_entry를 호출한다.
     insert_spt_entry(&(thread_current()->spt), frame_page->spe); // Supplementary Page Table(SPT)에 엔트리 삽입
 
     /* 페이지를 LRU 리스트에 추가 */
