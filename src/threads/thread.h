@@ -30,8 +30,8 @@ typedef int tid_t;
 /* file descriptor table size*/
 #define FDTABLE_SIZE 256
 
-/* file descriptor table size*/
-#define FDTABLE_SIZE 256
+#define MIN_VALID_FD 3 // 최소 유효 파일 디스크립터
+#define MAX_VALID_FD FDTABLE_SIZE // 최대 유효 파일 디스크립터
 
 /* A kernel thread or user process.
 

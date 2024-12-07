@@ -23,6 +23,9 @@
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
+// 파일 디스크립터가 유효한지 확인
+static bool is_valid_fd(int fd);
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -240,7 +243,7 @@ process_exit (void)
  */
   file_close(curr->exec_file);
   for(int i = 3; i < FDTABLE_SIZE; i++) {
-    process_file_close(i); // syscall close에서 fd를 받아 단일 파일을 close하는 동작이 필요하므로, 불가피하게 캡슐화
+    process_close_file(i); // syscall close에서 fd를 받아 단일 파일을 close하는 동작이 필요하므로, 불가피하게 캡슐화
   }
 }
 
@@ -782,44 +785,46 @@ void init_esp(char** argv, char* argc, void** esp) {
 //   free(argv);
 // }
 
-void 
-process_file_close (int fd_idx) 
-{
-  struct thread* t = thread_current();
+// 파일 디스크립터로 파일 포인터 가져오기
+struct file* process_get_file(int fd) {
+  struct thread* curr = thread_current();
+  if (!is_valid_fd(fd)) {
+    return NULL; // 유효하지 않은 파일 디스크립터는 NULL 반환
+  }
+  return curr->fd_table[fd];
+}
 
-  // process_exit에서는 애초에 for문에서 걸러져서 들어오지만, close syscall에서는 fd를 받아 단일 파일에 대해 수행하므로, 검토 조건 필요하다.
-  if(fd_idx < 3 || fd_idx >= FDTABLE_SIZE) {
+// 파일 디스크립터가 유효한지 확인
+static bool is_valid_fd(int fd) {
+  return fd >= MIN_VALID_FD && fd < MAX_VALID_FD;
+}
+
+// 파일 디스크립터 닫기
+void process_close_file(int fd) {
+  struct thread* curr = thread_current();
+
+  // 파일 디스크립터가 유효하지 않으면 종료
+  if (!is_valid_fd(fd)) {
     return;
   }
 
-  if(t->fd_table[fd_idx] != NULL) {
-    file_close(t->fd_table[fd_idx]);
-    t->fd_table[fd_idx] = NULL;
+  // 파일이 열려 있는 경우 닫기
+  if (curr->fd_table[fd] != NULL) {
+    file_close(curr->fd_table[fd]);
+    curr->fd_table[fd] = NULL; // 테이블 엔트리 초기화
   }
-
-  return;
 }
 
-int 
-process_add_file (struct file* f)
-{
-  struct thread* t = thread_current();
-  int i;
-  for(i=3;i<FDTABLE_SIZE;i++){
-    if(t->fd_table[i]==NULL){
-      t->fd_table[i]=f;
-      return i;
+// 파일 디스크립터 테이블에 파일 추가
+int process_add_file(struct file* file) {
+  struct thread* curr = thread_current();
+
+  for (int i = MIN_VALID_FD; i < MAX_VALID_FD; i++) {
+    if (curr->fd_table[i] == NULL) {
+      curr->fd_table[i] = file;
+      return i; // 성공적으로 추가된 디스크립터 반환
     }
   }
-  return -1;
-}
 
-struct file* 
-process_get_file (int fd)
-{
-  struct thread* t = thread_current();
-  if(fd<3 || fd>=FDTABLE_SIZE){
-    return NULL;
-  }
-  return t->fd_table[fd];
+  return -1; // 파일 디스크립터 테이블이 가득 찬 경우
 }

@@ -181,99 +181,73 @@ wait(pid_t pid)
   return process_wait(pid); // 특정 자식 프로세스의 종료를 기다리고 
 }
 
-int 
-read(int fd, void *buffer, unsigned int size)
-{
+int read(int fd, void *buffer, unsigned int size) {
   int result;
   uint8_t temp;
-  if(fd<0 || fd==1 || fd>=FDTABLE_SIZE){exit(-1);}
+  if (fd < 0 || fd == 1 || fd >= FDTABLE_SIZE) { exit(-1); }
 
-  /* for read-bad-ptr */
-  // check_address(buffer)
+  // 버퍼가 유효한지 확인
   check_buffer(buffer, size, 1);
 
   lock_acquire(&filesys_lock);
-  if(fd==0){
-    for(result=0;(result<size) && (temp=input_getc());result++){
-      *(uint8_t*)(buffer+result)=temp;
+  if (fd == 0) {
+    for (result = 0; (result < size) && (temp = input_getc()); result++) {
+      *(uint8_t *)(buffer + result) = temp;
     }
-  }
-  else{
-    struct file* f=process_get_file(fd);
-    if(f==NULL){
+  } else {
+    struct file* f = process_get_file(fd);
+    if (f == NULL) {
       lock_release(&filesys_lock);
       exit(-1);
     }
-    result=file_read(f, buffer, size);
+    result = file_read(f, buffer, size);
   }
   lock_release(&filesys_lock);
   return result;
 }
 
-int 
-write (int fd, const void *buffer, unsigned size) 
-{
+int write(int fd, const void *buffer, unsigned size) {
   int file_write_result;
   struct file* f;
-  if(fd<=0 || fd>=FDTABLE_SIZE){exit(-1);}
+  if (fd <= 0 || fd >= FDTABLE_SIZE) { exit(-1); }
 
-  /* for read-bad-ptr */
-  // check_address(buffer)
+  // 버퍼가 유효한지 확인
   check_buffer(buffer, size, 0);
 
   lock_acquire(&filesys_lock);
-  if(fd==1){
+  if (fd == 1) {
     putbuf(buffer, size);
     lock_release(&filesys_lock);
     return size;
-  }
-  else{
-    f=process_get_file(fd);
-    if(f==NULL){
+  } else {
+    f = process_get_file(fd);
+    if (f == NULL) {
       lock_release(&filesys_lock);
       exit(-1);
     }
-    file_write_result=file_write(f, buffer, size);
+    file_write_result = file_write(f, buffer, size);
     lock_release(&filesys_lock);
     return file_write_result;
   }
 }
 
-/** pintos manual 3.15
- * Accessing User Memory - bad address checking
- * 1. NULL pointer such as open(NULL)
- * 2. Unmapped virtual memory
- * 3. pointer to kernel address space 
- */
-void
-check_address(void* vaddr) {
-  if (vaddr == NULL) {
-    exit(-1);
-  }
-  if (!is_user_vaddr(vaddr)) {
-    exit(-1);
-  }
-  // page fault 인지 체크하기 위해 필요한데, 추가하면 모든 테스트가 fail 된다. 이유는 모르겠다.
-  // if (!pagedir_get_page(thread_current()->pagedir, vaddr) == NULL) {
-  //   exit(-1);
-  // }
-}
-
-int 
-open (const char* file)
-{
+int open(const char* file) {
   int fd;
   struct file* f;
-  if(file==NULL){exit(-1);}
+  if (file == NULL) { exit(-1); }
   lock_acquire(&filesys_lock);
-  f=filesys_open(file);
-  if(f==NULL){
+  f = filesys_open(file);
+  if (f == NULL) {
     lock_release(&filesys_lock);
     return -1;
   }
-  fd=process_add_file(f);
+  fd = process_add_file(f);
   lock_release(&filesys_lock);
   return fd;
+}
+
+void close(int fd) {
+  process_close_file(fd); // 함수명을 수정
 }
 
 bool 
@@ -294,12 +268,6 @@ remove (const char *file)
     exit(-1);
   }
   return filesys_remove(file);
-}
-
-void 
-close (int fd)
-{
-  process_file_close(fd);
 }
 
 int 

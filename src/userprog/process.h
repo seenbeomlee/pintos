@@ -18,8 +18,12 @@ int parse_argc(char* file_name);
 void parse_argv(char** argv, int argc, char* file_name);
 void free_argv(char** argv, int argc);
 
-void process_file_close(int fd_idx);
-int process_add_file (struct file* f);
+// 파일 디스크립터 닫기
+void process_close_file(int fd);
+
+// 파일 디스크립터 테이블에 파일 추가
+int process_add_file(struct file* file);
+
 struct file* process_get_file (int fd);
 
 #endif /* userprog/process.h */
