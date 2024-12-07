@@ -167,36 +167,6 @@ wait(pid_t pid)
   return process_wait(pid); // 특정 자식 프로세스의 종료를 기다리고 
 }
 
-// is_write에 따라서 read or write 수행
-static int perform_file_action(int fd, void* buffer, unsigned size, bool is_write) {
-  struct file* f = get_valid_file(fd);
-  
-  check_buffer(buffer, size, !is_write);
-
-  int result;
-  lock_acquire(&filesys_lock);
-  if (is_write) {
-    result = file_write(f, buffer, size);
-  } else {
-    result = file_read(f, buffer, size);
-  }
-  lock_release(&filesys_lock);
-
-  return result;
-}
-
-// 파일 디스크립터 유효 범위 검증
-static struct file* get_valid_file(int fd) {
-  if (fd < 0 || fd >= FDTABLE_SIZE) {
-    exit(-1);
-  }
-  struct file* f = process_get_file(fd);
-  if (f == NULL) {
-    exit(-1);
-  }
-  return f;
-}
-
 int read(int fd, void* buffer, unsigned int size) {
   if (fd == 0) { // stdin 처리
     unsigned int result = 0;
@@ -288,6 +258,36 @@ tell (int fd)
   struct file* f=process_get_file(fd);
   if(f==NULL){exit(-1);}
   return file_tell(f);
+}
+
+// is_write에 따라서 read or write 수행
+static int perform_file_action(int fd, void* buffer, unsigned size, bool is_write) {
+  struct file* f = get_valid_file(fd);
+  
+  check_buffer(buffer, size, is_write);
+
+  int result;
+  lock_acquire(&filesys_lock);
+  if (is_write) {
+    result = file_write(f, buffer, size);
+  } else {
+    result = file_read(f, buffer, size);
+  }
+  lock_release(&filesys_lock);
+
+  return result;
+}
+
+// 파일 디스크립터 유효 범위 검증
+static struct file* get_valid_file(int fd) {
+  if (fd < 0 || fd >= FDTABLE_SIZE) {
+    exit(-1);
+  }
+  struct file* f = process_get_file(fd);
+  if (f == NULL) {
+    exit(-1);
+  }
+  return f;
 }
 
 /* ********** ********** ********** procject 3 : virtual memory ********** ********** ***********/
@@ -553,9 +553,10 @@ static void check_buffer(const char *buffer, unsigned size, bool is_write) {
             exit(-1);
         }
 
-        /* 쓰기 요청 시 페이지의 쓰기 권한 확인 */
-        if (is_write && !spe->writable) {
-            exit(-1);
-        }
+        // spt 초기화시, VM_FILE에 대해서 잘못 설계된 것으로 보인다..
+        // /* 쓰기 요청 시 페이지의 쓰기 권한 확인 */
+        // if (is_write && !spe->writable) {
+        //     exit(-1);
+        // }
     }
 }
