@@ -13,9 +13,10 @@ static unsigned spt_hash_func(const struct hash_elem* element, void* aux);
 static bool spt_less_func(const struct hash_elem* first, const struct hash_elem* second, void* aux);
 
 static struct hash_elem* find_hash_elem(struct hash* supplementary_table, void* virtual_address);
-static void handle_unloaded_page(struct spt_entry* entry);
 
 static void spt_destroy_func(struct hash_elem* element, void* aux UNUSED);
+static void release_spt_entry(struct spt_entry* entry);
+static void handle_loaded_page(struct spt_entry* entry);
 
 // Hash 테이블 초기화
 void spt_init(struct hash* supplementary_table) {
@@ -75,29 +76,46 @@ static struct hash_elem* find_hash_elem(struct hash* supplementary_table, void* 
 
 // Hash 테이블 제거
 void spt_destroy(struct hash* supplementary_table) {
-    ASSERT(supplementary_table != NULL);
-    hash_destroy(supplementary_table, spt_destroy_func);
+  ASSERT(supplementary_table != NULL);
+
+  // Hash 테이블 엔트리를 제거하며 관련 자원도 정리
+  hash_destroy(supplementary_table, spt_destroy_func);
 }
 
 // Hash 요소 제거 함수
 static void spt_destroy_func(struct hash_elem* element, void* aux UNUSED) {
-    ASSERT(element != NULL);
-    struct spt_entry* target_entry = hash_entry(element, struct spt_entry, elem);
+  ASSERT(element != NULL);
 
-    if (target_entry->is_loaded) {
-        handle_unloaded_page(target_entry);
-    } else {
-        free(target_entry);
-    }
+  struct spt_entry* entry = hash_entry(element, struct spt_entry, elem);
+  release_spt_entry(entry);
 }
 
-// 로드되지 않은 페이지 처리
-static void handle_unloaded_page(struct spt_entry* entry) {
-    void* kernel_address = pagedir_get_page(thread_current()->pagedir, entry->vaddr);
-    free_page(kernel_address);
-    pagedir_clear_page(thread_current()->pagedir, entry->vaddr);
-    free(entry);
+// Supplementary Page Table Entry 해제
+static void release_spt_entry(struct spt_entry* entry) {
+  ASSERT(entry != NULL);
+
+  if (entry->is_loaded) {
+    handle_loaded_page(entry);  // 로드된 페이지 처리
+  } else {
+    free(entry);  // 로드되지 않은 엔트리 메모리 해제
+  }
 }
+
+// 로드된 페이지 처리
+static void handle_loaded_page(struct spt_entry* entry) {
+  ASSERT(entry != NULL);
+
+  // 페이지 테이블에서 물리 주소를 검색
+  void* kernel_address = pagedir_get_page(thread_current()->pagedir, entry->vaddr);
+
+  // 페이지 메모리 해제 및 테이블에서 제거
+  free_page(kernel_address);
+  pagedir_clear_page(thread_current()->pagedir, entry->vaddr);
+
+  // 엔트리 메모리 해제
+  free(entry);
+}
+
 
 // 파일에서 데이터를 로드하여 물리 메모리에 저장
 bool load_file(void* kernel_address, struct spt_entry* page_entry) {
