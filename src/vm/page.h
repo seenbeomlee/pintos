@@ -21,16 +21,6 @@
 // 파일과 무관한 페이지로, 동적 메모리 할당(malloc), 스택 확장 등에서 사용
 #define VM_ANON 2  
 
-// Frame 정보를 나타내는 구조체
-struct frame_entry {
-  struct spt_entry* spt_entry; // 이 프레임에 매핑된 페이지 테이블 엔트리
-  struct thread* owner_thread; // 이 프레임과 연관된 스레드
-  struct list_elem lru_elem;  // LRU 리스트 탐색을 위한 리스트 요소
-
-  void* kernal_addr;           // 물리 주소에 매핑된 프레임 주소
-};
-
-
 /** Supplementary Page Entry 구조체 
  * process.c > load_segment() : create
  */

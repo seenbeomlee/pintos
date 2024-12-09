@@ -213,12 +213,12 @@ page_fault (struct intr_frame *f)
 
 // 페이지 폴트 처리 루틴 : spt에 엔트리가 있다면, 파일 데이터 로드 & 스왑에서 복구 등 페이지 적재를 처리, (2)프레임 할당
 static bool resolve_page_fault(struct spt_entry* entry) {
-  struct frame_entry* new_frame = allocate_frame(PAL_USER); // 사용자 페이지를 위한 프레임 할당
+  struct frame_entry* new_frame = allocate_frame(PAL_USER); // 사용자 페이지를 위한 프레임 할당 (이 경우에는 초기화 불필요)
   if (!new_frame) { // 물리 메모리 페이지 할당 실패 시
     return false;
   }
 
-  if (!process_page_type(entry, new_frame)) { // 페이지 유형에 따른 데이터 로드/ 복구
+  if (!process_page_type(entry, new_frame)) { // 페이지 유형에 따른 데이터 로드/ 복구 (왜냐하면, 여기서 타입에 따라 진행한다)
     return false;
   }
 
