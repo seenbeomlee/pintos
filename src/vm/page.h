@@ -55,7 +55,7 @@ struct mmap_file_entry {
 
 /* ********** ********** ********** ********** ********** ********** ********** ***********/
 
-/**
+/** process.c 에서 사용
  * Supplementary Page Table (SPT) 관리 함수
  * process.c > start_process() 에서 사용된다.
  * 프로세스가 사용하는 가상 메모리 구조를 초기화하기 위해서 호출한다.
@@ -67,12 +67,30 @@ void spt_init(struct hash* supplementary_table);
 
 /* ********** ********** ********** ********** ********** ********** ********** ***********/
 
-bool insert_spt_entry(struct hash* supplementary_table, struct spt_entry* new_entry);
-bool delete_spt_entry(struct hash* supplementary_table, struct spt_entry* target_entry);
+/**
+ * 1. exception.c > page_fault() > spt_entry 존재 유무에 따라서 페이지 폴트 처리 방식이 달라진다.
+ * 없다면 -> 비정상적인 접근이나, 예외적으로 스택 확장이 가능한지 확인한다.
+ * 있다면 -> lazy_loading 상태이므로, 페이지 유형에 따라서 처리한다.
+ * 
+ * 2. syscall.c > mmap()
+ * 매핑을 하기에 앞서, 해당 가상 주소가 비어있는지 확인한다. (즉, 매핑된 엔트리가 없어야 가능)
+ */
+struct spt_entry* lookup_spt_entry(void* virtual_address);
 
 /* ********** ********** ********** ********** ********** ********** ********** ***********/
 
-struct spt_entry* lookup_spt_entry(void* virtual_address);
+/** 
+ * 1. process.c > setup_stack()
+ * 2-1. process.c > load_segment() -- lazy loading
+ * 2-2. exception.c > page_fault() > stack_growth() -- lazy loading
+ * 4. syscall.c > mmap() 
+ */
+bool insert_spt_entry(struct hash* supplementary_table, struct spt_entry* new_entry);
+
+/**
+ * syscall.c > munmap()할 때, 해당하는 spt_entry를 삭제한다.
+ */
+bool delete_spt_entry(struct hash* supplementary_table, struct spt_entry* target_entry);
 
 /* ********** ********** ********** ********** ********** ********** ********** ***********/
 
