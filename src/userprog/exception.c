@@ -4,6 +4,14 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/vaddr.h"
+#include "userprog/syscall.h"
+#include <debug.h>
+#include "userprog/process.h"
+#include "vm/frame.h"
+#include "threads/palloc.h"
+
+#define MAX_STACK_SIZE 0xBF800000
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -264,12 +272,15 @@ static bool validate_stack_growth(void* access_addr, void* current_esp) {
     }
 
     // 스택 크기 제한 확인
-    if (access_addr < MAX_STACK_LIMIT) {
+    if (access_addr < MAX_STACK_SIZE) {
         return false;
     }
 
-    // esp와 fault_addr 간 거리 확인
-    uintptr_t distance = (uintptr_t)current_esp - (uintptr_t)access_addr;
+    /** project 3 : stack growth
+     * 접근한 주소(access_addr)가 현재 스택 포인터(f->esp == current_esp)보다 작은 경우에만 스택 확장을 허용한다.
+     * 이는 스택이 높은 주소에서 낮은 주소로 확장되기 때문이다.
+     */
+    uintptr_t distance = (uintptr_t)current_esp; - (uintptr_t)access_addr; // esp와 fault_addr 간 거리 확인
     if (distance > 32) {
         return false;
     }
@@ -283,7 +294,7 @@ static bool grow_user_stack(void* target_addr) {
   void* aligned_addr = pg_round_down(target_addr); // 대상 주소를 페이지 단위로 정렬
 
   struct frame_entry* new_frame = allocate_frame(PAL_USER | PAL_ZERO); // 사용자 페이지를 위한 물리 메모리 할당
-  
+
   struct spt_entry* new_entry = malloc(sizeof(struct spt_entry)); // SPT 엔트리 생성
 
   if (!new_frame || !new_entry) { // 메모리 할당 실패 처리
