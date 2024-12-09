@@ -440,12 +440,12 @@ void munmap(int mapid) {
         next = list_next(elem);  // 다음 요소를 미리 저장
 
         switch (mapid) {
-            case -1:  /* 모든 매핑 해제 */
+            case -1:  // 모든 매핑 해제
                 free_mmap_file(mmap_file_entry, &elem);
                 elem = next;  // 다음 요소로 이동
                 break;
 
-            default:  /* 특정 mapid 매핑 해제 */
+            default:  // 특정 mapid 매핑 해제
                 if (mapid == mmap_file_entry->mapid) {
                     free_mmap_file(mmap_file_entry, &elem);
                     return;  // 특정 mapid 작업 완료 후 함수 종료
@@ -482,10 +482,11 @@ static void cleanup_mmap_pages(struct mmap_file_entry *mmap_file_entry) {
         struct spt_entry *entry = list_entry(elem, struct spt_entry, mmap_elem);
 
         // 매핑된 페이지의 상태 확인 및 처리
-        if (entry->is_loaded) { // 로그된 경우,
+        if (entry->is_loaded) { // 로드된 경우, (1)dirty page처리, (2)물리 메모리 해제 가 필요하다.
             handle_page_removal(entry, t->pagedir);  // 메모리 정리
             entry->is_loaded = false;               // is_loaded = false로 상태 업데이트
         }
+        // 로드되지 않은 경우, page가 이미 메모리에 로드되지 않은 상태이므로 추가 작업 없이 바로 정리할 수 있다.
 
         // 엔트리 제거
         list_remove(elem); // mmap_file_entry->spt_entry_list spt_entry를 제거
@@ -493,7 +494,7 @@ static void cleanup_mmap_pages(struct mmap_file_entry *mmap_file_entry) {
     }
 }
 
-/* dirty 페이지 기록, 페이지 테이블 제거, 메모리 해제를 한 함수로 통합했다. */
+// 물리 메모리에 로드되어 있는 경우, (1)dirty 페이지 기록 (2)페이지 테이블 제거 (3)메모리 해제를 한 함수로 통합
 static void handle_page_removal(struct spt_entry *entry, uint32_t *pagedir) {
     ASSERT(entry != NULL);
     ASSERT(pagedir != NULL);
@@ -501,7 +502,8 @@ static void handle_page_removal(struct spt_entry *entry, uint32_t *pagedir) {
     // spt 엔트리의 가장 주소(entry->virtual_addr)에 매핑된 물리 메모리 주소를 가져온다.
     void *kernal_addr = pagedir_get_page(pagedir, entry->virtual_addr);
 
-    // Dirty 페이지인 경우 디스크에 기록
+    // dirty 페이지인 경우 디스크에 기록한다.
+    // dirty 페이지란, 물리 메모리에서 수정되었으나 아직 디스크에 기록되지 않은 페이지를 의미한다.
     if (pagedir_is_dirty(pagedir, entry->virtual_addr)) {
         lock_acquire(&filesys_lock);
         file_write_at(entry->mmap_file, entry->virtual_addr, entry->read_bytes, entry->offset);
