@@ -21,20 +21,12 @@
 // 파일과 무관한 페이지로, 동적 메모리 할당(malloc), 스택 확장 등에서 사용
 #define VM_ANON 2  
 
-// Memory-mapped file 구조체
-struct mmap_file_entry {
-    int mapid;                  // 이 파일의 mapid (식별)
-    struct file* mmap_file;          // 연결된 파일
-    struct list_elem elem;      // 리스트 순회 및 검색을 위한 elem
-    struct list spt_entry_list;       // mmap과 연관된 spt_entry 관리 리스트
-};
-
 // Frame 정보를 나타내는 구조체
-struct page {
-    void* kaddr;                // 이 페이지에 연결된 물리 주소
-    struct spt_entry* spe;      // 이 페이지에 연결된 가상 주소를 가진 spt_entry
-    struct thread* t;           // 이 페이지와 연관된 스레드
-    struct list_elem lru;       // LRU 리스트 탐색을 위한 list_elem
+struct frame_entry {
+    void* frame_addr;           // 물리 주소에 매핑된 프레임 주소
+    struct spt_entry* spt_entry; // 이 프레임에 매핑된 페이지 테이블 엔트리
+    struct thread* owner_thread; // 이 프레임과 연관된 스레드
+    struct list_elem lru_elem;  // LRU 리스트 탐색을 위한 리스트 요소
 };
 
 // Supplementary Page Entry 구조체
@@ -54,6 +46,14 @@ struct spt_entry {
     struct list_elem mmap_elem; // mmap 리스트와 연결된 elem
 
     size_t swap_slot;           // 스왑 슬롯 번호
+};
+
+// Memory-mapped file 구조체
+struct mmap_file_entry {
+    int mapid;                  // 이 파일의 mapid (식별)
+    struct file* mmap_file;          // 연결된 파일
+    struct list_elem elem;      // 리스트 순회 및 검색을 위한 elem
+    struct list spt_entry_list;       // mmap과 연관된 spt_entry 관리 리스트
 };
 
 /* ********** ********** ********** ********** ********** ********** ********** ***********/

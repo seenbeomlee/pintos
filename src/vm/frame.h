@@ -25,7 +25,7 @@ void init_frame_table(void);
  * 반환값:
  *  - 할당된 페이지 구조체를 가리키는 포인터를 반환하며, 할당에 실패하면 NULL을 반환한다.
  */
-struct page* allocate_frame(enum palloc_flags flags);
+struct frame_entry* allocate_frame(enum palloc_flags flags);
 
 /* 
  * 새로 할당된 프레임을 LRU 리스트에 추가한다.
@@ -35,7 +35,7 @@ struct page* allocate_frame(enum palloc_flags flags);
  * 매개변수:
  *  - new_page: 새로 할당된 프레임을 나타내는 페이지 구조체.
  */
-void add_frame_to_lru(struct page* new_page);
+void add_frame_to_lru(struct frame_entry* new_frame);
 
 /* 
  * 커널 가상 주소를 기반으로 물리 프레임을 해제한다.

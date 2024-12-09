@@ -572,36 +572,36 @@ static struct spt_entry* initialize_spt_entry(void *vaddr, bool writable)
 static bool
 setup_stack(void **esp) // 사용자 프로그램 실행을 위한 esp (stack pointer)를 세팅하는 함수이다.
 {
-    struct page *frame_page; // 물리 페이지를 가리키는 구조체
+    struct frame_entry *frame; // 물리 페이지를 가리키는 구조체
     bool is_successful = false;
 
     /* 물리 메모리 페이지 할당 */
-    frame_page = allocate_frame(PAL_USER | PAL_ZERO); // 사용자 영역에서 0으로 초기화된 페이지 할당
-    if (frame_page == NULL) {
+    frame = allocate_frame(PAL_USER | PAL_ZERO); // 사용자 영역에서 0으로 초기화된 페이지 할당
+    if (frame == NULL) {
         return false; // 물리 페이지 할당 실패 시 종료
     }
 
     /* 사용자 가상 메모리와 물리 페이지 매핑 */
-    is_successful = install_page((uint8_t *)PHYS_BASE - PGSIZE, frame_page->kaddr, true);
+    is_successful = install_page((uint8_t *)PHYS_BASE - PGSIZE, frame->frame_addr, true);
     if (!is_successful) {
-        free_page(frame_page->kaddr); // 매핑 실패 시 물리 메모리 해제
+        free_page(frame->frame_addr); // 매핑 실패 시 물리 메모리 해제
         return false;
     }
 
     *esp = PHYS_BASE; // 스택 포인터 설정: 사용자 스택의 최상단 위치로 초기화
 
     /* SPT 엔트리 초기화 및 추가 */
-    frame_page->spe = initialize_spt_entry((uint8_t *)PHYS_BASE - PGSIZE, true); // SPT 엔트리 생성 및 초기화
-    if (frame_page->spe == NULL) {
-        free_page(frame_page->kaddr); // SPT 초기화 실패 시 물리 메모리 해제
+    frame->spt_entry = initialize_spt_entry((uint8_t *)PHYS_BASE - PGSIZE, true); // SPT 엔트리 생성 및 초기화
+    if (frame->spt_entry == NULL) {
+        free_page(frame->frame_addr); // SPT 초기화 실패 시 물리 메모리 해제
         return false;
     }
 
     // 스택의 최상단에 페이지를 할당하고, 해당 정보를 spt에 기록하기 위해 insert_spt_entry를 호출한다.
-    insert_spt_entry(&(thread_current()->spt), frame_page->spe); // Supplementary Page Table(SPT)에 엔트리 삽입
+    insert_spt_entry(&(thread_current()->spt), frame->spt_entry); // Supplementary Page Table(SPT)에 엔트리 삽입
 
     /* 페이지를 LRU 리스트에 추가 */
-    add_frame_to_lru(frame_page); // 페이지를 LRU(Least Recently Used) 리스트에 추가하여 교체 알고리즘 지원
+    add_frame_to_lru(frame); // 페이지를 LRU(Least Recently Used) 리스트에 추가하여 교체 알고리즘 지원
 
     return is_successful; // 성공 여부 반환
 }
