@@ -105,6 +105,7 @@ void spt_destroy(struct hash* supplementary_table) {
   ASSERT(supplementary_table != NULL);
 
   // Hash 테이블 엔트리를 제거하며 관련 자원도 정리
+  // thread->spt에 존재하는 모든 spt_entry에 대해서 spt_destroy_func()을 실행한다.
   hash_destroy(supplementary_table, spt_destroy_func);
 }
 
@@ -116,14 +117,22 @@ static void spt_destroy_func(struct hash_elem* element, void* aux UNUSED) {
   release_spt_entry(entry);
 }
 
-// Supplementary Page Table Entry 해제
+/** Supplementary Page Table Entry 해제
+ * # if loaded
+ *  - 1.페이지 테이블에서 매핑 제거
+ *  - 2.물리 메모리 할당 해제
+ *  - 3.엔트리 메모리 해제
+ * 
+ * # if not loaded
+ *  - 3.엔트리 메모리 해제만 필요하다.
+ */
 static void release_spt_entry(struct spt_entry* entry) {
   ASSERT(entry != NULL);
 
   if (entry->is_loaded) {
-    handle_loaded_page(entry);  // 로드된 페이지 처리
+    handle_loaded_page(entry);  // 로드된 spt_entry 처리
   } else {
-    free(entry);  // 로드되지 않은 엔트리 메모리 해제
+    free(entry);  // 로드되지 않은 spt_entry 처리
   }
 }
 
@@ -134,11 +143,11 @@ static void handle_loaded_page(struct spt_entry* entry) {
   // 페이지 테이블에서 물리 주소를 검색
   void* kernel_address = pagedir_get_page(thread_current()->pagedir, entry->virtual_addr);
 
-  // 페이지 메모리 해제 및 테이블에서 제거
+  // 2.페이지 메모리 해제 및 1.테이블에서 매핑 제거
   free_frame(kernel_address);
   pagedir_clear_page(thread_current()->pagedir, entry->virtual_addr);
 
-  // 엔트리 메모리 해제
+  // 3.엔트리 메모리 해제
   free(entry);
 }
 

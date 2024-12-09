@@ -171,6 +171,12 @@ process_wait (tid_t child_tid UNUSED)
 }
 
 /* Free the current process's resources. */
+/** 7. On Process Termination
+ * process.c > process_exit()에서 진행된다.
+ * 1. mmap_file_entry 해제 by syscall.c > munmap(-1)
+ * 2. spt_entry & frame_entry 해제 by page.c > spt_destroy()
+ *  이때, spt_entry가 is_loaded 되어있다면 frame_entry 해제까지 필요하다.
+ */
 void
 process_exit (void)
 {
