@@ -15,7 +15,7 @@ static struct spt_entry* create_spt_entry_for_mmap(struct mmap_file_entry* mmap_
 
 static void free_mmap_file(struct mmap_file_entry *mmap_file_entry, struct list_elem **elem);
 static void cleanup_mmap_pages(struct mmap_file_entry* mmap_file_entry);
-static void handle_page_removal(struct spt_entry *spe, uint32_t *pagedir);
+static void handle_page_removal(struct spt_entry *entry, uint32_t *pagedir);
 
 static int perform_file_action(int fd, void* buffer, unsigned size, bool is_write);
 static struct file* get_valid_file(int fd);
@@ -381,16 +381,16 @@ static bool map_pages_from_file(struct mmap_file_entry* mmap_file_entry, void* a
     }
 
     // SPT 엔트리 생성
-    struct spt_entry* spe = create_spt_entry_for_mmap(mmap_file_entry, addr, offset, length);
-    if (!spe) {
+    struct spt_entry* entry = create_spt_entry_for_mmap(mmap_file_entry, addr, offset, length);
+    if (!entry) {
       return false; // 엔트리 생성 실패
     }
 
     // SPT에 엔트리 추가
-    insert_spt_entry(&thread_current()->spt, spe);
+    insert_spt_entry(&thread_current()->spt, entry);
 
     // mmap_file_entry spe_list에 추가
-    list_push_back(&mmap_file_entry->spt_entry_list, &spe->mmap_elem);
+    list_push_back(&mmap_file_entry->spt_entry_list, &entry->mmap_elem);
 
     // 다음 페이지로 이동
     addr += PGSIZE;
@@ -404,26 +404,26 @@ static bool map_pages_from_file(struct mmap_file_entry* mmap_file_entry, void* a
 // 파일 매핑을 위한 SPT 엔트리 생성
 static struct spt_entry* create_spt_entry_for_mmap(struct mmap_file_entry* mmap_file_entry, void* addr, size_t offset, int length) {
   // 메모리 할당
-  struct spt_entry* spe = malloc(sizeof(struct spt_entry));
-  if (!spe) {
+  struct spt_entry* entry = malloc(sizeof(struct spt_entry));
+  if (!entry) {
     return NULL; // 메모리 할당 실패
   }
 
   // 엔트리 초기화
-  memset(spe, 0, sizeof(struct spt_entry));
-  spe->type = VM_FILE; // 매핑된 파일 타입
+  memset(entry, 0, sizeof(struct spt_entry));
+  entry->entry_type = VM_FILE; // 매핑된 파일 타입
 
   // // 파일의 deny_write 상태에 따라 writable 설정
-  // spe->writable = return_deny_write(mmap_file_entry->mmap_file); // deny_write가 true면 쓰기 금지
-  spe->writable = true; // 쓰기 가능 여부
+  // entry->is_writable = return_deny_write(mmap_file_entry->mmap_file); // deny_write가 true면 쓰기 금지
+  entry->is_writable = true; // 쓰기 가능 여부
   
-  spe->vaddr = addr; // 매핑될 가상 주소
-  spe->offset = offset; // 파일 내 오프셋
-  spe->read_bytes = length < PGSIZE ? length : PGSIZE; // 읽을 바이트 크기
-  spe->zero_bytes = PGSIZE - spe->read_bytes; // 남은 공간을 0으로 초기화
-  spe->file = mmap_file_entry->mmap_file; // 파일 핸들 설정
+  entry->virtual_addr = addr; // 매핑될 가상 주소
+  entry->offset = offset; // 파일 내 오프셋
+  entry->read_bytes = length < PGSIZE ? length : PGSIZE; // 읽을 바이트 크기
+  entry->zero_bytes = PGSIZE - entry->read_bytes; // 남은 공간을 0으로 초기화
+  entry->mmap_file = mmap_file_entry->mmap_file; // 파일 핸들 설정
 
-  return spe; // 초기화된 SPT 엔트리 반환
+  return entry; // 초기화된 SPT 엔트리 반환
 }
 
 /* ********** ********** ********** ********** ********** ********** ********** ***********/
@@ -479,38 +479,38 @@ static void cleanup_mmap_pages(struct mmap_file_entry *mmap_file_entry) {
 
     for (elem = list_begin(spe_list); elem != list_end(spe_list); elem = next) {
         next = list_next(elem);  // 다음 요소 저장
-        struct spt_entry *spe = list_entry(elem, struct spt_entry, mmap_elem);
+        struct spt_entry *entry = list_entry(elem, struct spt_entry, mmap_elem);
 
         // 매핑된 페이지의 상태 확인 및 처리
-        if (spe->is_loaded) { // 로그된 경우,
-            handle_page_removal(spe, t->pagedir);  // 메모리 정리
-            spe->is_loaded = false;               // is_loaded = false로 상태 업데이트
+        if (entry->is_loaded) { // 로그된 경우,
+            handle_page_removal(entry, t->pagedir);  // 메모리 정리
+            entry->is_loaded = false;               // is_loaded = false로 상태 업데이트
         }
 
         // 엔트리 제거
         list_remove(elem); // mmap_file_entry->spt_entry_list spt_entry를 제거
-        delete_spt_entry(&t->spt, spe); // spt에서 해당 spt_entry를 삭제하고, 관련 리소스를 해제(free)
+        delete_spt_entry(&t->spt, entry); // spt에서 해당 spt_entry를 삭제하고, 관련 리소스를 해제(free)
     }
 }
 
 /* dirty 페이지 기록, 페이지 테이블 제거, 메모리 해제를 한 함수로 통합했다. */
-static void handle_page_removal(struct spt_entry *spe, uint32_t *pagedir) {
-    ASSERT(spe != NULL);
+static void handle_page_removal(struct spt_entry *entry, uint32_t *pagedir) {
+    ASSERT(entry != NULL);
     ASSERT(pagedir != NULL);
 
-    // spt 엔트리의 가장 주소(spe->vaddr)에 매핑된 물리 메모리 주소를 가져온다.
-    void *kaddr = pagedir_get_page(pagedir, spe->vaddr);
+    // spt 엔트리의 가장 주소(entry->virtual_addr)에 매핑된 물리 메모리 주소를 가져온다.
+    void *kaddr = pagedir_get_page(pagedir, entry->virtual_addr);
 
     // Dirty 페이지인 경우 디스크에 기록
-    if (pagedir_is_dirty(pagedir, spe->vaddr)) {
+    if (pagedir_is_dirty(pagedir, entry->virtual_addr)) {
         lock_acquire(&filesys_lock);
-        file_write_at(spe->file, spe->vaddr, spe->read_bytes, spe->offset);
+        file_write_at(entry->mmap_file, entry->virtual_addr, entry->read_bytes, entry->offset);
         lock_release(&filesys_lock);
     }
 
     // 페이지 테이블에서 제거 및 메모리 해제, 즉 페이지 테이블에서 '가상 주소와 물리 주소의 매핑을 제거'한다.
     // 이후 해당 가상 주소로 접근하려고 하면, 매핑이 해제되었기 때문에 당연히 page fault가 발생한다.
-    pagedir_clear_page(pagedir, spe->vaddr);
+    pagedir_clear_page(pagedir, entry->virtual_addr);
     // 받아 온 물리 메모리 주소(kaddr)를 통해 '물리 메모리를 실제로 해제'하여 다른 작업에서 재사용할 수 있도록 만든다.
     free_page(kaddr);
 }
@@ -541,7 +541,7 @@ static void check_address(void* vaddr) {
  */
 static void check_buffer(const char *buffer, unsigned size, bool is_write) {
     ASSERT(buffer != NULL);
-    struct spt_entry *spe;
+    struct spt_entry *entry;
 
     /* 버퍼의 모든 바이트를 검사 */
     for (int i = 0; i < size; i++) {
@@ -551,16 +551,16 @@ static void check_buffer(const char *buffer, unsigned size, bool is_write) {
         check_address(addr);
 
         /* SPT에서 엔트리를 검색 */
-        spe = lookup_spt_entry(addr);
+        entry = lookup_spt_entry(addr);
 
         /* 페이지가 로드되지 않았거나 유효하지 않으면 예외 처리 */
-        if (spe == NULL) {
+        if (entry == NULL) {
             exit(-1);
         }
 
         // // spt 초기화시, VM_FILE에 대해서 잘못 설계된 것으로 보인다..
         // /* 쓰기 요청 시 페이지의 쓰기 권한 확인 */
-        // if (is_write && !spe->writable) {
+        // if (is_write && !entry->writable) {
         //     exit(-1);
         // }
     }

@@ -18,7 +18,7 @@ static void spt_destroy_func(struct hash_elem* element, void* aux UNUSED);
 static void release_spt_entry(struct spt_entry* entry);
 static void handle_loaded_page(struct spt_entry* entry);
 
-static bool read_file_to_memory(void* kernel_address, struct spt_entry* page_entry);
+static bool read_file_to_memory(void* kernel_address, struct spt_entry* entry);
 static void zero_unused_memory(void* kernel_address, size_t read_bytes, size_t zero_bytes);
 
 // Hash 테이블 초기화
@@ -32,8 +32,8 @@ static unsigned spt_hash_func(const struct hash_elem* hash_elem, void* aux UNUSE
   ASSERT(hash_elem != NULL);
   
   // 해시 비교 함수 : 해시 엔트리에서 SPT 엔트리로 변환
-  struct spt_entry* entry = hash_entry(hash_elem, struct spt_entry, elem); // hash_elem에서 spt 구조체 추출
-  return hash_int((int)entry->vaddr); // 가상 주소(vaddr)를 정수로 변환하여 해시 생성
+  struct spt_entry* entry = hash_entry(hash_elem, struct spt_entry, hash_elem); // hash_elem에서 spt 구조체 추출
+  return hash_int((int)entry->virtual_addr); // 가상 주소(vaddr)를 정수로 변환하여 해시 생성
 }
 
 // 해시 비교 함수: 두 SPT 엔트리의 가상 주소를 비교하여 오름차순으로 정렬 (작은 쪽이 앞으로 오도록))
@@ -41,10 +41,10 @@ static bool spt_less_func(const struct hash_elem* a, const struct hash_elem* b, 
   ASSERT(a != NULL && b != NULL);
 
   // 해시 엔트리를 SPT 엔트리로 변환
-  struct spt_entry* entry_a = hash_entry(a, struct spt_entry, elem); // hash_elem에서 spt 구조체 추출
-  struct spt_entry* entry_b = hash_entry(b, struct spt_entry, elem);
+  struct spt_entry* entry_a = hash_entry(a, struct spt_entry, hash_elem); // hash_elem에서 spt 구조체 추출
+  struct spt_entry* entry_b = hash_entry(b, struct spt_entry, hash_elem);
 
-  return entry_a->vaddr < entry_b->vaddr; // 가상 주소 기준 정렬 (오름차순))
+  return entry_a->virtual_addr < entry_b->virtual_addr; // 가상 주소 기준 정렬 (오름차순))
 }
 
 /* ********** ********** ********** ********** ********** ********** ********** ***********/
@@ -53,9 +53,9 @@ static bool spt_less_func(const struct hash_elem* a, const struct hash_elem* b, 
 bool insert_spt_entry(struct hash* supplementary_table, struct spt_entry* new_entry) {
   ASSERT(supplementary_table != NULL); // Supplementary Page Table의 유효성 확인
   ASSERT(new_entry != NULL);           // 새로운 엔트리의 유효성 확인
-  ASSERT(pg_ofs(new_entry->vaddr) == 0); // 페이지가 정렬된 주소인지 확인
+  ASSERT(pg_ofs(new_entry->virtual_addr) == 0); // 페이지가 정렬된 주소인지 확인
 
-  struct hash_elem* result = hash_insert(supplementary_table, &new_entry->elem);
+  struct hash_elem* result = hash_insert(supplementary_table, &new_entry->hash_elem);
   return result == NULL; // NULL일 경우, 성공적으로 삽입됨을 반환
 }
 
@@ -64,7 +64,7 @@ bool delete_spt_entry(struct hash* supplementary_table, struct spt_entry* target
   ASSERT(supplementary_table != NULL); // Supplementary Page Table의 유효성 확인
   ASSERT(target_entry != NULL);        // 대상 엔트리의 유효성 확인
 
-  struct hash_elem* result = hash_delete(supplementary_table, &target_entry->elem);
+  struct hash_elem* result = hash_delete(supplementary_table, &target_entry->hash_elem);
   if (!result) {
     return false; // 삭제 실패 시 false 반환
   }
@@ -81,7 +81,7 @@ struct spt_entry* lookup_spt_entry(void* virtual_address) {
   struct hash_elem* hash_elem = find_hash_element(spt_table, virtual_address);
 
   // 해시 엔트리가 존재하면 spt_entry로 변환하여 반환, 없으면 NULL 반환
-  return hash_elem ? hash_entry(hash_elem, struct spt_entry, elem) : NULL;
+  return hash_elem ? hash_entry(hash_elem, struct spt_entry, hash_elem) : NULL;
 }
 
 // 해시 엔트리 검색
@@ -89,13 +89,13 @@ static struct hash_elem* find_hash_element(struct hash* spt_table, void* virtual
   struct spt_entry temp_entry;
 
   // 페이지 정렬된 주소로 임시 엔트리 생성
-  temp_entry.vaddr = pg_round_down(virtual_address);
+  temp_entry.virtual_addr = pg_round_down(virtual_address);
 
   // 가상 주소가 페이지 정렬되었는지 검증
-  ASSERT(pg_ofs(temp_entry.vaddr) == 0);
+  ASSERT(pg_ofs(temp_entry.virtual_addr) == 0);
 
   // SPT 테이블에서 해시 엔트리 검색
-  return hash_find(spt_table, &temp_entry.elem);
+  return hash_find(spt_table, &temp_entry.hash_elem);
 }
 
 /* ********** ********** ********** ********** ********** ********** ********** ***********/
@@ -112,7 +112,7 @@ void spt_destroy(struct hash* supplementary_table) {
 static void spt_destroy_func(struct hash_elem* element, void* aux UNUSED) {
   ASSERT(element != NULL);
 
-  struct spt_entry* entry = hash_entry(element, struct spt_entry, elem);
+  struct spt_entry* entry = hash_entry(element, struct spt_entry, hash_elem);
   release_spt_entry(entry);
 }
 
@@ -132,11 +132,11 @@ static void handle_loaded_page(struct spt_entry* entry) {
   ASSERT(entry != NULL);
 
   // 페이지 테이블에서 물리 주소를 검색
-  void* kernel_address = pagedir_get_page(thread_current()->pagedir, entry->vaddr);
+  void* kernel_address = pagedir_get_page(thread_current()->pagedir, entry->virtual_addr);
 
   // 페이지 메모리 해제 및 테이블에서 제거
   free_page(kernel_address);
-  pagedir_clear_page(thread_current()->pagedir, entry->vaddr);
+  pagedir_clear_page(thread_current()->pagedir, entry->virtual_addr);
 
   // 엔트리 메모리 해제
   free(entry);
@@ -145,43 +145,43 @@ static void handle_loaded_page(struct spt_entry* entry) {
 /* ********** ********** ********** ********** ********** ********** ********** ***********/
 
 // 파일에서 데이터를 로드하여 물리 메모리에 저장
-bool load_file(void* kernel_address, struct spt_entry* page_entry) {
+bool load_file(void* kernel_address, struct spt_entry* entry) {
   // 물리 메모리 주소가 유효한지 확인
   // kernel_address가 NULL이면 메모리에 데이터를 저장할 수 없으므로 프로그램 중단
   ASSERT(kernel_address != NULL);
 
   // Supplementary Page Table(SPT) 엔트리가 유효한지 확인
   // page_entry가 NULL이면 파일 데이터를 읽을 메타정보가 없으므로 프로그램 중단
-  ASSERT(page_entry != NULL);
+  ASSERT(entry != NULL);
 
   // Supplementary Page Table(SPT) 엔트리의 페이지 타입이 올바른지 확인
   // 지원하는 타입은 VM_BIN(실행 파일)과 VM_FILE(메모리 매핑 파일)만 해당
   // 다른 타입(VM_ANON 등)이 들어오면 load_file이 처리할 수 없으므로, 이를 사전에 차단
-  ASSERT(page_entry->type == VM_BIN || page_entry->type == VM_FILE);
+  ASSERT(entry->entry_type == VM_BIN || entry->entry_type == VM_FILE);
 
   // 파일에서 읽기
-  if (!read_file_to_memory(kernel_address, page_entry)) {
+  if (!read_file_to_memory(kernel_address, entry)) {
     return false;
   }
 
   // 남은 공간(zero_bytes)을 0으로 초기화
-  zero_unused_memory(kernel_address, page_entry->read_bytes, page_entry->zero_bytes);
+  zero_unused_memory(kernel_address, entry->read_bytes, entry->zero_bytes);
 
   return true;
 }
 
 // 파일에서 데이터를 물리 메모리에 읽기
-static bool read_file_to_memory(void* kernel_address, struct spt_entry* page_entry) {
+static bool read_file_to_memory(void* kernel_address, struct spt_entry* entry) {
   int bytes_read = file_read_at(
-    page_entry->file,
+    entry->mmap_file,
     kernel_address,
-    page_entry->read_bytes,
-    page_entry->offset
+    entry->read_bytes,
+    entry->offset
   );
 
   // 실제 값 : bytes_read == 실제로 파일에서 읽어들인 바이트 수
-  // 예상 값 : page_entry->read_bytes == 해당 페이지에서 읽어야 할 데이터 크기
-  return bytes_read == (int)page_entry->read_bytes;
+  // 예상 값 : entry->read_bytes == 해당 페이지에서 읽어야 할 데이터 크기
+  return bytes_read == (int)entry->read_bytes;
 }
 
 // 물리 메모리에서 남은 공간 0으로 초기화

@@ -23,37 +23,41 @@
 
 // Frame 정보를 나타내는 구조체
 struct frame_entry {
-    void* frame_addr;           // 물리 주소에 매핑된 프레임 주소
-    struct spt_entry* spt_entry; // 이 프레임에 매핑된 페이지 테이블 엔트리
-    struct thread* owner_thread; // 이 프레임과 연관된 스레드
-    struct list_elem lru_elem;  // LRU 리스트 탐색을 위한 리스트 요소
+  struct spt_entry* spt_entry; // 이 프레임에 매핑된 페이지 테이블 엔트리
+  struct thread* owner_thread; // 이 프레임과 연관된 스레드
+  struct list_elem lru_elem;  // LRU 리스트 탐색을 위한 리스트 요소
+
+  void* frame_addr;           // 물리 주소에 매핑된 프레임 주소
 };
 
 // Supplementary Page Entry 구조체
 struct spt_entry {
-    uint8_t type;               // VM_BIN, VM_FILE, VM_ANON의 타입
-    void* vaddr;                // 가상 페이지 번호
+  struct file* mmap_file;   // 가상 주소와 매핑된 파일
+  size_t offset;            // 파일에서 읽어야 할 오프셋
+  size_t read_bytes;        // 페이지에 쓰여 있는 데이터 크기
+  size_t zero_bytes;        // 0으로 채워야 할 나머지 페이지 크기
 
-    bool writable;              // 쓰기가 가능한지 여부
-    bool is_loaded;             // 물리 메모리에 로드 여부
+  uint8_t entry_type;       // 엔트리 타입 (VM_BIN, VM_FILE, VM_ANON 등)
+  void* virtual_addr;       // 가상 페이지 주소
 
-    struct file* file;          // 가상 주소와 매핑된 파일
-    size_t offset;              // 파일에서 읽어야 할 위치
-    size_t read_bytes;          // 페이지에 쓰여 있는 데이터 크기
-    size_t zero_bytes;          // 0으로 채워야 할 페이지의 (읽지 않은, 쓰이지 않은) 나머지 크기
+  bool is_writable;         // 쓰기가 가능한지 여부 => 테스트 케이스 통과를 못해서 사실상 필요없는 변수가 되어버림.
+  bool is_loaded;           // 물리 메모리에 로드 여부
 
-    struct hash_elem elem;      // 해시 테이블에 저장될 hash_elem
-    struct list_elem mmap_elem; // mmap 리스트와 연결된 elem
+  size_t swap_index;        // 스왑 슬롯 인덱스
 
-    size_t swap_slot;           // 스왑 슬롯 번호
+  struct hash_elem hash_elem; // 해시 테이블에 저장될 요소
+  struct list_elem mmap_elem; // mmap 리스트와 연결된 리스트 요소
 };
 
 // Memory-mapped file 구조체
 struct mmap_file_entry {
-    int mapid;                  // 이 파일의 mapid (식별)
-    struct file* mmap_file;          // 연결된 파일
-    struct list_elem elem;      // 리스트 순회 및 검색을 위한 elem
-    struct list spt_entry_list;       // mmap과 연관된 spt_entry 관리 리스트
+  struct file* mmap_file;          // 연결된 파일
+
+  int mapid;                  // 이 파일의 mapid (식별)
+
+  struct list spt_entry_list;       // mmap과 연관된 spt_entry 관리 리스트
+
+  struct list_elem elem;      // 리스트 순회 및 검색을 위한 elem
 };
 
 /* ********** ********** ********** ********** ********** ********** ********** ***********/
@@ -85,6 +89,6 @@ void spt_destroy(struct hash* supplementary_table);
 
 // 파일 로드 함수
 // excepion.h가 아닌 page.h에 선언된 이유는 파일 로드 작업이 VM 시스템의 일환으로 spt에 맞춰져 있기 때문이다.
-bool load_file(void* kernel_address, struct spt_entry* page_entry);
+bool load_file(void* kernel_address, struct spt_entry* entry);
 
 #endif /* VM_PAGE_H */

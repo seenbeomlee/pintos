@@ -28,7 +28,7 @@ static bool grow_user_stack(void* target_addr);
  * SPT 엔트리를 기반으로 페이지를 적재하거나 복구.
  * 내부적으로 process_page_type을 호출하여 페이지 유형별 작업을 수행.
  */
-static bool resolve_page_fault(struct spt_entry* page_entry);
+static bool resolve_page_fault(struct spt_entry* entry);
 
 /**
  * 페이지의 유형에 따라 데이터를 로드하거나 복구.
@@ -183,8 +183,8 @@ page_fault (struct intr_frame *f)
     }
 
     // spt에서 엔트리 검색
-    struct spt_entry* page_entry = lookup_spt_entry(fault_addr);
-    if (page_entry == NULL) { // spt 엔트리가 없는 경우의 페이지 폴트 처리
+    struct spt_entry* entry = lookup_spt_entry(fault_addr);
+    if (entry == NULL) { // spt 엔트리가 없는 경우의 페이지 폴트 처리
         if (!validate_stack_growth(fault_addr, f->esp)) { // 스택 확장이 가능한지 '논리적' 확인
             exit(-1); // 스택 확장이 불가능하면 종료
         }
@@ -194,7 +194,7 @@ page_fault (struct intr_frame *f)
         return;
     }
 
-    if (!resolve_page_fault(page_entry)) { // spt 엔트리가 있는 경우의 페이지 폴트 처리
+    if (!resolve_page_fault(entry)) { // spt 엔트리가 있는 경우의 페이지 폴트 처리
         printf("Page fault resolution failed.\n");
         exit(-1);
     }
@@ -225,10 +225,10 @@ static void initialize_spt_entry(struct spt_entry* entry, void* aligned_addr, st
     ASSERT(entry != NULL);
     ASSERT(frame != NULL);
 
-    entry->type = VM_ANON;
-    entry->writable = true;
+    entry->entry_type = VM_ANON;
+    entry->is_writable = true;
     entry->is_loaded = true;
-    entry->vaddr = aligned_addr;
+    entry->virtual_addr = aligned_addr;
     frame->spt_entry = entry;
 }
 
@@ -266,24 +266,24 @@ static bool grow_user_stack(void* target_addr) {
 }
 
 // 페이지 폴트 처리 루틴 : spt에 엔트리가 있다면, 파일 데이터 로드 & 스왑에서 복구 등 페이지 적재를 처리
-static bool resolve_page_fault(struct spt_entry* page_entry) {
+static bool resolve_page_fault(struct spt_entry* entry) {
   struct frame_entry* allocated_frame = allocate_frame(PAL_USER); // 사용자 페이지를 위한 프레임 할당
   if (!allocated_frame) { // 물리 메모리 페이지 할당 실패 시
     return false;
   }
 
-  if (!process_page_type(page_entry, allocated_frame)) { // 페이지 유형에 따른 데이터 로드/ 복구
+  if (!process_page_type(entry, allocated_frame)) { // 페이지 유형에 따른 데이터 로드/ 복구
     return false;
   }
 
-  if (!install_page(page_entry->vaddr, allocated_frame->frame_addr, page_entry->writable)) { // 가상 주소와 물리 페이지 매핑
+  if (!install_page(entry->virtual_addr, allocated_frame->frame_addr, entry->is_writable)) { // 가상 주소와 물리 페이지 매핑
     free_page(allocated_frame->frame_addr);
     return false;
   }
 
   // spt 엔트리와 프레임 상태 업데이터
-  page_entry->is_loaded = true; // 페이지 로드 상태 업데이트
-  allocated_frame->spt_entry = page_entry; // 프레임과 SPT 엔트리 연결
+  entry->is_loaded = true; // 페이지 로드 상태 업데이트
+  allocated_frame->spt_entry = entry; // 프레임과 SPT 엔트리 연결
 
   add_frame_to_lru(allocated_frame); // 프레임을 LRU 리스트에 추가
 
@@ -295,7 +295,7 @@ static bool process_page_type(struct spt_entry* entry, struct frame_entry* frame
   ASSERT(entry != NULL);
   ASSERT(frame != NULL);
 
-  switch (entry->type) { // 페이지 유형에 따라 처리
+  switch (entry->entry_type) { // 페이지 유형에 따라 처리
     case VM_BIN: // 실행 파일의 페이지 데이터 로드
     case VM_FILE: // 메모리 매핑 파일의 데이터 로드
       if (!load_file(frame->frame_addr, entry)) { // 파일에서 페이지 데이터 로드
@@ -306,7 +306,7 @@ static bool process_page_type(struct spt_entry* entry, struct frame_entry* frame
       break;
 
     case VM_ANON: // 익명 메모리 영역의 데이터 복구
-      swap_in(entry->swap_slot, frame->frame_addr); // 스왑에서 복구
+      swap_in(entry->swap_index, frame->frame_addr); // 스왑에서 복구
       entry->is_loaded = true; // 로드 상태 업데이트
       break;
 

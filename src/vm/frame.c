@@ -124,8 +124,8 @@ static void evict_frame(void) {
     victim_frame = list_entry(elem, struct frame_entry, lru_elem); // 희생 페이지 가져오기
 
     // 접근 비트가 설정된 경우 클리어하고 다음 프레임으로 이동
-    if (pagedir_is_accessed(victim_frame->owner_thread->pagedir, victim_frame->spt_entry->vaddr)) {
-      pagedir_set_accessed(victim_frame->owner_thread->pagedir, victim_frame->spt_entry->vaddr, false); // 접근 비트 클리어
+    if (pagedir_is_accessed(victim_frame->owner_thread->pagedir, victim_frame->spt_entry->virtual_addr)) {
+      pagedir_set_accessed(victim_frame->owner_thread->pagedir, victim_frame->spt_entry->virtual_addr, false); // 접근 비트 클리어
       continue;  // 최근에 사용된 페이지이므로 다음으로 이동
     }
 
@@ -141,21 +141,21 @@ static void evict_frame(void) {
 
 // Dirty 페이지 또는 Anonymout Page의 스왑 아웃을 처리하는 방식
 static bool process_eviction(struct frame_entry* frame) {
-  if (pagedir_is_dirty(frame->owner_thread->pagedir, frame->spt_entry->vaddr) || frame->spt_entry->type == VM_ANON) {
-    if (frame->spt_entry->type == VM_FILE) { // 파일 기반 페이지의 경우 처리
+  if (pagedir_is_dirty(frame->owner_thread->pagedir, frame->spt_entry->virtual_addr) || frame->spt_entry->entry_type == VM_ANON) {
+    if (frame->spt_entry->entry_type == VM_FILE) { // 파일 기반 페이지의 경우 처리
       // 파일 페이지는 디스크로 다시 기록
       lock_acquire(&filesys_lock);
-      file_write_at(frame->spt_entry->file, frame->frame_addr, frame->spt_entry->read_bytes, frame->spt_entry->offset);
+      file_write_at(frame->spt_entry->mmap_file, frame->frame_addr, frame->spt_entry->read_bytes, frame->spt_entry->offset);
       lock_release(&filesys_lock);
     } else { // 익명 페이지의 경우 처리
       // 익명 페이지는 스왑 슬롯으로 기록
-      frame->spt_entry->type = VM_ANON;
-      frame->spt_entry->swap_slot = swap_out(frame->frame_addr);
+      frame->spt_entry->entry_type = VM_ANON;
+      frame->spt_entry->swap_index = swap_out(frame->frame_addr);
     }
 
     // 페이지 상태 갱신
     frame->spt_entry->is_loaded = false; // 메모리에서 로드 상태 제거
-    pagedir_clear_page(frame->owner_thread->pagedir, frame->spt_entry->vaddr);  // 페이지 테이블에서 제거
+    pagedir_clear_page(frame->owner_thread->pagedir, frame->spt_entry->virtual_addr);  // 페이지 테이블에서 제거
     return true;  // 페이지 처리 성공
   }
 

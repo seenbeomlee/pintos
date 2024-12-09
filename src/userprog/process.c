@@ -486,6 +486,46 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
   return true;
 }
 
+/**
+ * create_spt_entry: Supplementary Page Table Entry를 생성하고 초기화하는 함수.
+ */
+static struct spt_entry* create_spt_entry(struct file *file, off_t offset, uint8_t *vaddr,
+                                          size_t read_bytes, size_t zero_bytes, bool writable) 
+{
+    /* Supplementary Page Table Entry 생성 */
+    struct spt_entry *entry = calloc(1, sizeof(struct spt_entry));
+    if (!entry) {
+        return NULL; // 메모리 할당 실패 시 NULL 반환
+    }
+
+    /* 페이지의 타입을 VM_BIN으로 설정 */
+    entry->entry_type = VM_BIN;
+
+    /* 파일 핸들 저장 (reopened_file) */
+    entry->mmap_file = file;
+
+    /* 파일 오프셋 설정 */
+    entry->offset = offset;
+
+    /* 파일에서 읽을 바이트 수 저장 */
+    entry->read_bytes = read_bytes;
+
+    /* 남은 바이트를 0으로 채울 크기 설정 */
+    entry->zero_bytes = zero_bytes;
+
+    /* 페이지의 가상 주소 저장 */
+    entry->virtual_addr = vaddr;
+
+    /* 페이지의 읽기/쓰기 권한 설정 */
+    entry->is_writable = writable;
+
+    /* 페이지가 아직 메모리에 로드되지 않았음을 표시 */
+    entry->is_loaded = false;
+
+    /* 초기화된 엔트리 반환 */
+    return entry;
+}
+
 /* Loads a segment starting at offset OFS in FILE at address
    UPAGE.  In total, READ_BYTES + ZERO_BYTES bytes of virtual
    memory are initialized, as follows:
@@ -553,10 +593,10 @@ static struct spt_entry* initialize_spt_entry(void *vaddr, bool writable)
         return NULL; // 메모리 할당 실패 시 NULL 반환
     }
 
-    entry->type = VM_ANON; // 익명 페이지로 설정
-    entry->writable = writable; // 쓰기 가능 여부 설정
+    entry->entry_type = VM_ANON; // 익명 페이지로 설정
+    entry->is_writable = writable; // 쓰기 가능 여부 설정
     entry->is_loaded = true; // 페이지가 메모리에 로드됨
-    entry->vaddr = pg_round_down(vaddr); // 가상 주소를 페이지 단위로 정렬
+    entry->virtual_addr = pg_round_down(vaddr); // 가상 주소를 페이지 단위로 정렬
 
     return entry; // 초기화된 SPT 엔트리 반환
 }
