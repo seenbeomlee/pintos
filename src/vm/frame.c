@@ -18,22 +18,25 @@
 static struct list frame_table; // 모든 물리 메모리 프레임이 저장된 리스트로, 리스트 노드로 관리되며, 페이지 교체 시 순회한다.
 static struct list_elem* frame_clock_pointer; // LRU에서 현재 탐색 중인 프레임을 가리키는 포인터로, 이 포인터로 순회하며 희생 페이지 선택한다.
 
-static struct lock frame_table_lock;
+static struct lock frame_table_lock; // 프레임 작업시 동기화를 위한 락이다.
+extern struct lock filesys_lock; // 파일 시스템 작업과의 동기화를 위한 외부 락이다.
 
-extern struct lock filesys_lock;
+static struct page* create_frame(enum palloc_flags flags); // 새로운 프레임 생성
+static void resolve_memory_shortage(enum palloc_flags flags, struct page* frame); // 물리 메모리 부족시 해결하는 로직
 
-static struct page* create_frame(enum palloc_flags flags);
-static void resolve_memory_shortage(enum palloc_flags flags, struct page* frame);
+static struct page* find_frame_by_kaddr(void* kernel_addr); // 커널 주소를 기반으로 프레임을 검색한다.
+static struct page* find_frame(bool (*condition)(struct page*, void*), void* aux); // 조건 함수에 맞는 프레임을 찾는다.
 
-static struct page* find_frame_by_kaddr(void* kernel_addr);
-static bool is_kaddr_match(struct page* frame, void* kernel_addr);
+static bool is_kaddr_match(struct page* frame, void* kernel_addr); // 커널 주소가 일치하는지 확인하는 조건 함수이다.
 
-static void evict_frame(void);
-static bool process_eviction(struct page* frame);
+static void evict_frame(void); // LRU 알고리즘에 기반해서 페이지 교체를 수행한다.
+static bool process_eviction(struct page* frame); // dirty page나 anonymous page를 처리한다.
 
-static struct list_elem* get_next_lru_pointer(void);
-static void release_frame(struct page* frame);
+static struct list_elem* get_next_lru_pointer(void); // LRU 포인터를 다음으로 이동시킨다.
+static void release_frame(struct page* frame); // 프레임과 관련된 모든 리소스를 해제한다.
+static void remove_frame_from_lru(struct page* page); // LRU 리스트에서 프레임을 제거한다.
 
+// 프레임 테이블 초기화
 void init_frame_table(void) {
   list_init(&frame_table);  // 프레임 리스트 초기화
   lock_init(&frame_table_lock);  // 락 초기화
@@ -78,21 +81,6 @@ void add_frame_to_lru(struct page* page) {
   lock_release(&frame_table_lock);  // 락 해제
 }
 
-void remove_frame_from_lru(struct page* page) {
-  ASSERT(page);
-
-  lock_acquire(&frame_table_lock);
-
-  // 클럭 포인터 재설정
-  if (frame_clock_pointer == &page->lru) {
-    frame_clock_pointer = list_remove(frame_clock_pointer); // 현재 포인터를 제거 후 재설정
-  } else {
-    list_remove(&page->lru);
-  }
-
-  lock_release(&frame_table_lock);
-}
-
 // 커널 주소를 기반으로 페이지 프레임을 검색
 static struct page* find_frame_by_kaddr(void* kernel_addr) {
   ASSERT(pg_ofs(kernel_addr) == 0);  // 커널 주소는 페이지 크기로 정렬되어야 함
@@ -101,7 +89,7 @@ static struct page* find_frame_by_kaddr(void* kernel_addr) {
 }
 
 // 리스트를 순회하며 조건에 맞는 프레임을 검색
-struct page* find_frame(bool (*condition)(struct page*, void*), void* aux) {
+static struct page* find_frame(bool (*condition)(struct page*, void*), void* aux) {
   struct page* result_frame = NULL;
   struct list_elem* elem;
 
@@ -200,4 +188,19 @@ static void release_frame(struct page* frame) {
   remove_frame_from_lru(frame);      // LRU 리스트에서 제거
   palloc_free_page(frame->kaddr);   // 물리 메모리 해제
   free(frame);                      // 페이지 구조체 메모리 해제
+}
+
+static void remove_frame_from_lru(struct page* page) {
+  ASSERT(page);
+
+  lock_acquire(&frame_table_lock);
+
+  // 클럭 포인터 재설정
+  if (frame_clock_pointer == &page->lru) {
+    frame_clock_pointer = list_remove(frame_clock_pointer); // 현재 포인터를 제거 후 재설정
+  } else {
+    list_remove(&page->lru);
+  }
+
+  lock_release(&frame_table_lock);
 }
