@@ -245,7 +245,7 @@ static bool process_page_type(struct spt_entry* entry, struct frame_entry* frame
   switch (entry->entry_type) { // 페이지 유형에 따라 처리
     case VM_BIN: // 실행 파일의 페이지 데이터 로드
     case VM_FILE: // 메모리 매핑 파일의 데이터 로드
-      if (!load_file(frame->kernal_addr, entry)) { // 파일에서 페이지 데이터 로드
+      if (!load_file(frame->kernal_addr, entry)) { // 파일에서 페이지 데이터 로드하여 물리 메모리에 저장한다.
         free_frame(frame->kernal_addr);
         return false;
       }
@@ -253,7 +253,7 @@ static bool process_page_type(struct spt_entry* entry, struct frame_entry* frame
       break;
 
     case VM_ANON: // 익명 메모리 영역의 데이터 복구
-      swap_in(entry->swap_index, frame->kernal_addr); // 스왑에서 복구
+      swap_in(entry->swap_index, frame->kernal_addr); // 스왑에서 복구하여 물리 메모리에 저장한다.
       entry->is_loaded = true; // 로드 상태 업데이트
       break;
 
