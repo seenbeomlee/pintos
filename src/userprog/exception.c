@@ -280,7 +280,7 @@ static bool validate_stack_growth(void* access_addr, void* current_esp) {
      * 접근한 주소(access_addr)가 현재 스택 포인터(f->esp == current_esp)보다 작은 경우에만 스택 확장을 허용한다.
      * 이는 스택이 높은 주소에서 낮은 주소로 확장되기 때문이다.
      */
-    uintptr_t distance = (uintptr_t)current_esp; - (uintptr_t)access_addr; // esp와 fault_addr 간 거리 확인
+    uintptr_t distance = (uintptr_t)current_esp - (uintptr_t)access_addr; // esp와 fault_addr 간 거리 확인
     if (distance > 32) {
         return false;
     }
