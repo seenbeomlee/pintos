@@ -9,17 +9,6 @@ pw : 운영45
 2. $ ssh stu45@141.223.108.159
 3. $ 운영45 -> 핀토스45로 변경
 
-# reference
-
-여름방학 때 작성했던 pintos kaist version repository를 참고했다.
-1. https://github.com/seenbeomlee/CSED312_OS-kaist-GG
-<img width="480" alt="pintos_kaist_gg" src="https://github.com/user-attachments/assets/5d4ae0b5-c6f2-4319-b79e-044316bc6421">
-
-2. https://github.com/seenbeomlee/CSED312_OS-kaist-yoo-reference
-<img width="480" alt="pintos_kaist_reference" src="https://github.com/user-attachments/assets/793a530d-398b-4227-adc4-ee0e0ba61564">
-
-이때도 project 3는 도저히 잘 모르겠어서 전부 해결하지 못했다.
-
 # manual
 1. standford (eng)
 https://web.stanford.edu/class/cs140/projects/pintos/pintos.html#SEC_Top
@@ -83,3 +72,14 @@ $ make tests/threads/alarm-multiple.result
 reference : https://www.notion.so/pintos-gdb-a6e98e8768324a46905e954fbb387da4
 
 원문의 pintos-kaist notion이 닫힌 것 같아, 이전에 복사해두었던 주소가 남아있어 첨부.
+
+
+# reference
+여름방학 때 작성했던 pintos kaist version repository를 참고했다.
+이때도 project 3는 도저히 모르겠어서 해결하지 못했다.
+
+1. https://github.com/seenbeomlee/CSED312_OS-kaist-GG
+<img width="480" alt="pintos_kaist_gg" src="https://github.com/user-attachments/assets/5d4ae0b5-c6f2-4319-b79e-044316bc6421">
+
+2. https://github.com/seenbeomlee/CSED312_OS-kaist-yoo-reference
+<img width="480" alt="pintos_kaist_reference" src="https://github.com/user-attachments/assets/793a530d-398b-4227-adc4-ee0e0ba61564">
