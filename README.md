@@ -9,7 +9,9 @@ pw : 운영45
 2. $ ssh stu45@141.223.108.159
 3. $ 운영45 -> 핀토스45로 변경
 
-# reference / 여름방학 때 작성했던 pintos kaist version repository를 참고했다.
+# reference
+
+여름방학 때 작성했던 pintos kaist version repository를 참고했다.
 1. https://github.com/seenbeomlee/CSED312_OS-kaist-GG
 <img width="480" alt="pintos_kaist_gg" src="https://github.com/user-attachments/assets/5d4ae0b5-c6f2-4319-b79e-044316bc6421">
 
