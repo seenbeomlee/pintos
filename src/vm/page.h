@@ -22,11 +22,11 @@
 #define VM_ANON 2  
 
 // Memory-mapped file 구조체
-struct mmap_file {
+struct mmap_file_entry {
     int mapid;                  // 이 파일의 mapid (식별)
-    struct file* file;          // 연결된 파일
+    struct file* mmap_file;          // 연결된 파일
     struct list_elem elem;      // 리스트 순회 및 검색을 위한 elem
-    struct list spe_list;       // mmap과 연관된 spt_entry 관리 리스트
+    struct list spt_entry_list;       // mmap과 연관된 spt_entry 관리 리스트
 };
 
 // Frame 정보를 나타내는 구조체

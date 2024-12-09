@@ -9,12 +9,12 @@
 static void syscall_handler (struct intr_frame *);
 
 static bool is_valid_mmap_request(int fd, void* addr);
-static struct mmap_file* create_mmap_file(int fd);
-static bool map_pages_from_file(struct mmap_file* mmap_file, void* addr);
-static struct spt_entry* create_spt_entry_for_mmap(struct mmap_file* mmap_file, void* addr, size_t offset, int length);
+static struct mmap_file_entry* create_mmap_file(int fd);
+static bool map_pages_from_file(struct mmap_file_entry* mmap_file_entry, void* addr);
+static struct spt_entry* create_spt_entry_for_mmap(struct mmap_file_entry* mmap_file_entry, void* addr, size_t offset, int length);
 
-static void free_mmap_file(struct mmap_file *mmap_file, struct list_elem **elem);
-static void cleanup_mmap_pages(struct mmap_file* mmap_file);
+static void free_mmap_file(struct mmap_file_entry *mmap_file_entry, struct list_elem **elem);
+static void cleanup_mmap_pages(struct mmap_file_entry* mmap_file_entry);
 static void handle_page_removal(struct spt_entry *spe, uint32_t *pagedir);
 
 static int perform_file_action(int fd, void* buffer, unsigned size, bool is_write);
@@ -300,22 +300,22 @@ int mmap(int fd, void* addr) {
   }
 
   // 매핑 파일 구조체 생성
-  struct mmap_file* mmap_file = create_mmap_file(fd);
-  if (mmap_file == NULL) {
+  struct mmap_file_entry* mmap_file_entry = create_mmap_file(fd);
+  if (mmap_file_entry == NULL) {
     return -1;
   }
 
   // 파일 매핑을 가상 메모리에 적용
-  if (!map_pages_from_file(mmap_file, addr)) {
-    free(mmap_file);
+  if (!map_pages_from_file(mmap_file_entry, addr)) {
+    free(mmap_file_entry);
     return -1;
   }
 
   // mmap 리스트에 추가
-  list_push_back(&thread_current()->mmap_list, &mmap_file->elem);
+  list_push_back(&thread_current()->mmap_list, &mmap_file_entry->elem);
 
   // 매핑 ID 반환
-  return mmap_file->mapid;
+  return mmap_file_entry->mapid;
 }
 
 // mmap 요청의 유효성을 확인하는 함수
@@ -338,40 +338,40 @@ static bool is_valid_mmap_request(int fd, void* addr) {
   return true;
 }
 
-// mmap_file 구조체 생성 및 초기화
-static struct mmap_file* create_mmap_file(int fd) {
+// mmap_file_entry 구조체 생성 및 초기화
+static struct mmap_file_entry* create_mmap_file(int fd) {
   // 메모리 할당
-  struct mmap_file* mmap_file = malloc(sizeof(struct mmap_file));
-  if (!mmap_file) {
+  struct mmap_file_entry* mmap_file_entry = malloc(sizeof(struct mmap_file_entry));
+  if (!mmap_file_entry) {
     return NULL; // 메모리 할당 실패
   }
 
   // 구조체 초기화
-  memset(mmap_file, 0, sizeof(struct mmap_file));
-  list_init(&mmap_file->spe_list);
+  memset(mmap_file_entry, 0, sizeof(struct mmap_file_entry));
+  list_init(&mmap_file_entry->spt_entry_list);
 
   // 파일 핸들 확인
   struct file* file = thread_current()->fd_table[fd];
   if (!file) {
-    free(mmap_file);
+    free(mmap_file_entry);
     return NULL; // 유효하지 않은 파일 디스크립터
   }
 
   // 파일 핸들 복제
-  mmap_file->file = file_reopen(file);
-  if (!mmap_file->file) {
-    free(mmap_file);
+  mmap_file_entry->mmap_file = file_reopen(file);
+  if (!mmap_file_entry->mmap_file) {
+    free(mmap_file_entry);
     return NULL; // 파일 복제 실패
   }
 
   // 고유한 매핑 ID 설정
-  mmap_file->mapid = thread_current()->next_mapid++;
-  return mmap_file;
+  mmap_file_entry->mapid = thread_current()->next_mapid++;
+  return mmap_file_entry;
 }
 
-// mmap_file 구조체와 가상 메모리 주소를 기반으로 파일 매핑
-static bool map_pages_from_file(struct mmap_file* mmap_file, void* addr) {
-  int length = file_length(mmap_file->file); // 파일 길이 계산
+// mmap_file_entry 구조체와 가상 메모리 주소를 기반으로 파일 매핑
+static bool map_pages_from_file(struct mmap_file_entry* mmap_file_entry, void* addr) {
+  int length = file_length(mmap_file_entry->mmap_file); // 파일 길이 계산
   size_t offset = 0;
 
   while (length > 0) {
@@ -381,7 +381,7 @@ static bool map_pages_from_file(struct mmap_file* mmap_file, void* addr) {
     }
 
     // SPT 엔트리 생성
-    struct spt_entry* spe = create_spt_entry_for_mmap(mmap_file, addr, offset, length);
+    struct spt_entry* spe = create_spt_entry_for_mmap(mmap_file_entry, addr, offset, length);
     if (!spe) {
       return false; // 엔트리 생성 실패
     }
@@ -389,8 +389,8 @@ static bool map_pages_from_file(struct mmap_file* mmap_file, void* addr) {
     // SPT에 엔트리 추가
     insert_spt_entry(&thread_current()->spt, spe);
 
-    // mmap_file의 spe_list에 추가
-    list_push_back(&mmap_file->spe_list, &spe->mmap_elem);
+    // mmap_file_entry spe_list에 추가
+    list_push_back(&mmap_file_entry->spt_entry_list, &spe->mmap_elem);
 
     // 다음 페이지로 이동
     addr += PGSIZE;
@@ -402,7 +402,7 @@ static bool map_pages_from_file(struct mmap_file* mmap_file, void* addr) {
 }
 
 // 파일 매핑을 위한 SPT 엔트리 생성
-static struct spt_entry* create_spt_entry_for_mmap(struct mmap_file* mmap_file, void* addr, size_t offset, int length) {
+static struct spt_entry* create_spt_entry_for_mmap(struct mmap_file_entry* mmap_file_entry, void* addr, size_t offset, int length) {
   // 메모리 할당
   struct spt_entry* spe = malloc(sizeof(struct spt_entry));
   if (!spe) {
@@ -414,14 +414,14 @@ static struct spt_entry* create_spt_entry_for_mmap(struct mmap_file* mmap_file, 
   spe->type = VM_FILE; // 매핑된 파일 타입
 
   // // 파일의 deny_write 상태에 따라 writable 설정
-  // spe->writable = return_deny_write(mmap_file->file); // deny_write가 true면 쓰기 금지
+  // spe->writable = return_deny_write(mmap_file_entry->mmap_file); // deny_write가 true면 쓰기 금지
   spe->writable = true; // 쓰기 가능 여부
   
   spe->vaddr = addr; // 매핑될 가상 주소
   spe->offset = offset; // 파일 내 오프셋
   spe->read_bytes = length < PGSIZE ? length : PGSIZE; // 읽을 바이트 크기
   spe->zero_bytes = PGSIZE - spe->read_bytes; // 남은 공간을 0으로 초기화
-  spe->file = mmap_file->file; // 파일 핸들 설정
+  spe->file = mmap_file_entry->mmap_file; // 파일 핸들 설정
 
   return spe; // 초기화된 SPT 엔트리 반환
 }
@@ -429,25 +429,25 @@ static struct spt_entry* create_spt_entry_for_mmap(struct mmap_file* mmap_file, 
 /* ********** ********** ********** ********** ********** ********** ********** ***********/
 
 void munmap(int mapid) {
-    struct mmap_file *mmap_file;  // 매핑된 파일 정보를 담는 구조체
+    struct mmap_file_entry *mmap_file_entry;  // 매핑된 파일 정보를 담는 구조체
     struct thread *t = thread_current();  // 현재 스레드 정보
     struct list_elem *elem = list_begin(&t->mmap_list);  // mmap_list의 첫 번째 요소
     struct list_elem *next;  // 다음 요소를 저장할 포인터
 
     // mmap_list를 순회하며 매핑된 파일을 해제
     while (elem != list_end(&t->mmap_list)) {
-        mmap_file = list_entry(elem, struct mmap_file, elem);
+        mmap_file_entry = list_entry(elem, struct mmap_file_entry, elem);
         next = list_next(elem);  // 다음 요소를 미리 저장
 
         switch (mapid) {
             case -1:  /* 모든 매핑 해제 */
-                free_mmap_file(mmap_file, &elem);
+                free_mmap_file(mmap_file_entry, &elem);
                 elem = next;  // 다음 요소로 이동
                 break;
 
             default:  /* 특정 mapid 매핑 해제 */
-                if (mapid == mmap_file->mapid) {
-                    free_mmap_file(mmap_file, &elem);
+                if (mapid == mmap_file_entry->mapid) {
+                    free_mmap_file(mmap_file_entry, &elem);
                     return;  // 특정 mapid 작업 완료 후 함수 종료
                 }
                 elem = next;  // 다음 요소로 이동
@@ -456,26 +456,26 @@ void munmap(int mapid) {
     }
 }
 
-static void free_mmap_file(struct mmap_file *mmap_file, struct list_elem **elem) {
-    if (!mmap_file || !elem || !*elem) {
+static void free_mmap_file(struct mmap_file_entry *mmap_file_entry, struct list_elem **elem) {
+    if (!mmap_file_entry || !elem || !*elem) {
         return;  // 유효하지 않은 입력을 처리하지 않고 반환
     }
 
     /* 매핑된 페이지 해제 */
-    cleanup_mmap_pages(mmap_file);
+    cleanup_mmap_pages(mmap_file_entry);
 
     /* 파일 닫기 */
-    file_close(mmap_file->file);
+    file_close(mmap_file_entry->mmap_file);
 
     /* 리스트에서 제거 및 메모리 해제 */
     list_remove(*elem);
-    free(mmap_file);
+    free(mmap_file_entry);
 }
 
-static void cleanup_mmap_pages(struct mmap_file *mmap_file) {
+static void cleanup_mmap_pages(struct mmap_file_entry *mmap_file_entry) {
     struct thread *t = thread_current();
     struct list_elem *elem, *next;
-    struct list *spe_list = &(mmap_file->spe_list);
+    struct list *spe_list = &(mmap_file_entry->spt_entry_list);
 
     for (elem = list_begin(spe_list); elem != list_end(spe_list); elem = next) {
         next = list_next(elem);  // 다음 요소 저장
@@ -488,7 +488,7 @@ static void cleanup_mmap_pages(struct mmap_file *mmap_file) {
         }
 
         // 엔트리 제거
-        list_remove(elem); // mmap_file->spe_list에서 spt_entry를 제거
+        list_remove(elem); // mmap_file_entry->spt_entry_list spt_entry를 제거
         delete_spt_entry(&t->spt, spe); // spt에서 해당 spt_entry를 삭제하고, 관련 리소스를 해제(free)
     }
 }
