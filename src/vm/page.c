@@ -135,7 +135,7 @@ static void handle_loaded_page(struct spt_entry* entry) {
   void* kernel_address = pagedir_get_page(thread_current()->pagedir, entry->virtual_addr);
 
   // 페이지 메모리 해제 및 테이블에서 제거
-  free_page(kernel_address);
+  free_frame(kernel_address);
   pagedir_clear_page(thread_current()->pagedir, entry->virtual_addr);
 
   // 엔트리 메모리 해제

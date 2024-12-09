@@ -239,14 +239,14 @@ static bool grow_user_stack(void* target_addr) {
   struct spt_entry* new_entry = malloc(sizeof(struct spt_entry)); // SPT 엔트리 생성
 
   if (!new_frame || !new_entry) { // 메모리 할당 실패 처리
-    if (new_frame) free_page(new_frame->kernal_addr);
+    if (new_frame) free_frame(new_frame->kernal_addr);
     if (new_entry) free(new_entry);
     return false;
   }
 
   // 프레임을 성공적으로 할당한 후, 물리 메모리와 가상 주소 매핑
   if (!install_page(aligned_addr, new_frame->kernal_addr, true)) { // 페이지 매핑 실패 처리
-    free_page(new_frame->kernal_addr);
+    free_frame(new_frame->kernal_addr);
     free(new_entry);
     return false;
   }
@@ -278,7 +278,7 @@ static bool resolve_page_fault(struct spt_entry* entry) {
 
   // 프레임을 성공적으로 할당하였다면, 페이지를 메모리에 적재한다.
   if (!install_page(entry->virtual_addr, new_frame->kernal_addr, entry->is_writable)) { // 가상 주소와 물리 페이지 매핑
-    free_page(new_frame->kernal_addr);
+    free_frame(new_frame->kernal_addr);
     return false;
   }
 
@@ -300,7 +300,7 @@ static bool process_page_type(struct spt_entry* entry, struct frame_entry* frame
     case VM_BIN: // 실행 파일의 페이지 데이터 로드
     case VM_FILE: // 메모리 매핑 파일의 데이터 로드
       if (!load_file(frame->kernal_addr, entry)) { // 파일에서 페이지 데이터 로드
-        free_page(frame->kernal_addr);
+        free_frame(frame->kernal_addr);
         return false;
       }
       entry->is_loaded = true; // 로드 상태 업데이트
@@ -312,7 +312,7 @@ static bool process_page_type(struct spt_entry* entry, struct frame_entry* frame
       break;
 
     default: // 잘못된 페이지 유형 처리
-      free_page(frame->kernal_addr);
+      free_frame(frame->kernal_addr);
       return false;
   }
 

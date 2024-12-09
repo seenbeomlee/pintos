@@ -44,6 +44,6 @@ void add_frame_to_lru(struct frame_entry* new_frame);
  * 매개변수:
  *  - kernel_addr: 해제할 프레임의 커널 가상 주소.
  */
-void free_page(void* kernel_addr);
+void free_frame(void* kernel_addr);
 
 #endif

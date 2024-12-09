@@ -492,39 +492,23 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
 static struct spt_entry* create_spt_entry(struct file *file, off_t offset, uint8_t *vaddr,
                                           size_t read_bytes, size_t zero_bytes, bool writable) 
 {
-    /* Supplementary Page Table Entry 생성 */
-    struct spt_entry *entry = calloc(1, sizeof(struct spt_entry));
-    if (!entry) {
-        return NULL; // 메모리 할당 실패 시 NULL 반환
-    }
+  // Supplementary Page Table Entry 생성
+  struct spt_entry *entry = calloc(1, sizeof(struct spt_entry));
+  if (!entry) {
+    return NULL; // 메모리 할당 실패 시 NULL 반환
+  }
 
-    /* 페이지의 타입을 VM_BIN으로 설정 */
-    entry->entry_type = VM_BIN;
-
-    /* 파일 핸들 저장 (reopened_file) */
-    entry->mmap_file = file;
-
-    /* 파일 오프셋 설정 */
-    entry->offset = offset;
-
-    /* 파일에서 읽을 바이트 수 저장 */
-    entry->read_bytes = read_bytes;
-
-    /* 남은 바이트를 0으로 채울 크기 설정 */
-    entry->zero_bytes = zero_bytes;
-
-    /* 페이지의 가상 주소 저장 */
-    entry->virtual_addr = vaddr;
-
-    /* 페이지의 읽기/쓰기 권한 설정 */
-    entry->is_writable = writable;
-
-    /* 페이지가 아직 메모리에 로드되지 않았음을 표시 */
-    entry->is_loaded = false;
-
-    /* 초기화된 엔트리 반환 */
-    return entry;
+  entry->entry_type = VM_BIN;  // 페이지의 타입을 VM_BIN으로 설정
+  entry->mmap_file = file;  // 파일 핸들 저장 (reopened_file)
+  entry->offset = offset;  // 파일 오프셋 설정
+  entry->read_bytes = read_bytes;  // 파일에서 읽을 바이트 수 저장
+  entry->zero_bytes = zero_bytes;  // 남은 바이트를 0으로 채울 크기 설정
+  entry->virtual_addr = vaddr;  // 페이지의 가상 주소 저장
+  entry->is_writable = writable;  // 페이지의 읽기/쓰기 권한 설정
+  entry->is_loaded = false;  // 페이지가 아직 메모리에 로드되지 않았음을 표시
+  return entry;  // 초기화된 엔트리 반환
 }
+
 
 /* Loads a segment starting at offset OFS in FILE at address
    UPAGE.  In total, READ_BYTES + ZERO_BYTES bytes of virtual
@@ -544,43 +528,50 @@ static bool
 load_segment(struct file *file, off_t ofs, uint8_t *upage, // load_segment는 실행 파일의 특정 세그먼트를 물리 메모리에 로드하는 작업
              uint32_t read_bytes, uint32_t zero_bytes, bool writable)
 {
-  ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
-  ASSERT (pg_ofs (upage) == 0);
-  ASSERT (ofs % PGSIZE == 0);
+  // 입력 값 검증
+  ASSERT((read_bytes + zero_bytes) % PGSIZE == 0); // 총 바이트가 페이지 크기의 배수인지 확인
+  ASSERT(pg_ofs(upage) == 0);                      // 가상 주소가 페이지 정렬되었는지 확인
+  ASSERT(ofs % PGSIZE == 0);                       // 파일 오프셋이 페이지 정렬되었는지 확인
 
-  file_seek (file, ofs);
+  // 파일 읽기 시작 위치 설정
+  file_seek(file, ofs); // 파일 오프셋을 설정하여 읽기 시작 위치를 지정
+
+  // 파일 핸들 복제
+  struct file *reopened_file = file_reopen(file); // 파일 핸들을 복제하여 독립적으로 사용
+  if (!reopened_file) {
+    return false; // 파일 복제 실패 시 false 반환
+  }
+
+  // 페이지 단위로 spt_entry, spt 엔트리 생성 및 초기화하기 위한 while 루프 
   while (read_bytes > 0 || zero_bytes > 0) 
-    {
-        /* Calculate how to fill this page.
-         We will read xrPAGE_READ_BYTES bytes from FILE
-         and zero the final PAGE_ZERO_BYTES bytes. */
-        /* 현재 페이지에서 읽을 바이트와 0으로 채울 바이트 계산 */
-        size_t chunk_to_read = read_bytes < PGSIZE ? read_bytes : PGSIZE; // 현재 페이지에서 읽을 데이터 크기
-        size_t chunk_to_zero = PGSIZE - chunk_to_read;                   // 남은 바이트를 0으로 초기화할 크기
-
-
-        /* 헬퍼 함수로 엔트리 생성 */
-        struct spt_entry *new_entry = create_spt_entry(reopened_file, ofs, upage,
-                                                       chunk_to_read, chunk_to_zero, writable);
-        if (!new_entry) {
-            return false; // SPT 엔트리 생성 실패 시 false 반환
-        }
-
-        // 각 페이지 정보를 spt에 기록하기 위해 insert_spt_entry를 호출한다.
-        // 실행 파일의 텍스트 및 데이터 세그먼트 정보를 spt에 저장하여 이후 페이지 폴트 발생 시 복구 및 관리가 가능하게 만든다.
-        if (!insert_spt_entry(&(thread_current()->spt), new_entry)) {
-            free(new_entry); // 실패 시 메모리 해제
-            return false; // SPT 엔트리 추가 실패 시 false 반환
-        }
-
-        /* 다음 페이지로 진행 */
-        read_bytes -= chunk_to_read; // 읽을 데이터 크기 감소
-        zero_bytes -= chunk_to_zero; // 0으로 채울 크기 감소
-        upage += PGSIZE;             // 다음 페이지의 가상 주소로 이동
-        ofs += chunk_to_read;        // 파일 오프셋을 다음 데이터로 이동
+  {
+    /* Calculate how to fill this page.
+      We will read xrPAGE_READ_BYTES bytes from FILE
+      and zero the final PAGE_ZERO_BYTES bytes. */
+    /* 현재 페이지에서 읽을 바이트와 0으로 채울 바이트 계산 */
+    size_t chunk_to_read = read_bytes < PGSIZE ? read_bytes : PGSIZE; // 현재 페이지에서 읽을 데이터 크기
+    size_t chunk_to_zero = PGSIZE - chunk_to_read;                   // 남은 바이트를 0으로 초기화할 크기
+    
+    struct spt_entry *new_entry = create_spt_entry(reopened_file, ofs, upage, chunk_to_read, chunk_to_zero, writable);
+    if (!new_entry) {
+      return false; // SPT 엔트리 생성 실패 시 false 반환
     }
 
-    return true;
+    // current_thread의 spt에 spt_entry를 추가한다.
+    // 이 작업은 가상 메모리의 특정 페이지가 어떻게 관리될지를 정의하며, 이후 페이지 폴트 발생 시 이 정보를 기반으로 복구 작업을 수행할 수 있다.
+    if (!insert_spt_entry(&(thread_current()->spt), new_entry)) {
+      free(new_entry); // 실패 시 메모리 해제
+      return false; // SPT 엔트리 추가 실패 시 false 반환
+    }
+
+    /* 다음 페이지로 진행 */
+    read_bytes -= chunk_to_read; // 읽을 데이터 크기 감소
+    zero_bytes -= chunk_to_zero; // 0으로 채울 크기 감소
+    upage += PGSIZE;             // 다음 페이지의 가상 주소로 이동
+    ofs += chunk_to_read;        // 파일 오프셋을 다음 데이터로 이동
+  }
+  
+  return true;
 }
 
 /**
@@ -624,7 +615,7 @@ setup_stack(void **esp) // 사용자 프로그램 실행을 위한 esp (stack po
     /* 사용자 가상 메모리와 물리 페이지 매핑 */
     is_successful = install_page((uint8_t *)PHYS_BASE - PGSIZE, frame->kernal_addr, true);
     if (!is_successful) {
-        free_page(frame->kernal_addr); // 매핑 실패 시 물리 메모리 해제
+        free_frame(frame->kernal_addr); // 매핑 실패 시 물리 메모리 해제
         return false;
     }
 
@@ -633,7 +624,7 @@ setup_stack(void **esp) // 사용자 프로그램 실행을 위한 esp (stack po
     /* SPT 엔트리 초기화 및 추가 */
     frame->spt_entry = initialize_spt_entry((uint8_t *)PHYS_BASE - PGSIZE, true); // SPT 엔트리 생성 및 초기화
     if (frame->spt_entry == NULL) {
-        free_page(frame->kernal_addr); // SPT 초기화 실패 시 물리 메모리 해제
+        free_frame(frame->kernal_addr); // SPT 초기화 실패 시 물리 메모리 해제
         return false;
     }
 

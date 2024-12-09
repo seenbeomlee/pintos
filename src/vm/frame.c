@@ -182,30 +182,32 @@ static struct list_elem* get_next_lru_pointer(void) {
   return frame_clock_pointer;
 }
 
-// 커널 주소에 해당하는 페이지 메모리를 해제
-void free_page(void* kernel_addr) {
+// 물리 메모리 프레임을 해제하는 함수
+// 주어진 커널 주소(kernel_addr)에 해당하는 프레임을 찾아 해제한다.
+void free_frame(void* kernel_addr) {
   struct frame_entry* target_frame = find_frame_by_kaddr(kernel_addr);
   ASSERT(target_frame != NULL);  // 해당 커널 주소가 유효해야 함
   release_frame(target_frame);  // 페이지 메모리와 관련 리소스 해제
 }
 
-// 페이지 메모리와 관련 리소스를 해제하는 내부 함수
+// 프레임과 관련된 리소스를 정리하고 해제하는 함수
 static void release_frame(struct frame_entry* frame) {
   remove_frame_from_lru(frame);      // LRU 리스트에서 제거
   palloc_free_page(frame->kernal_addr);   // 물리 메모리 해제
   free(frame);                      // 페이지 구조체 메모리 해제
 }
 
+// LRU 리스트에서 프레임을 제거하는 함수
 static void remove_frame_from_lru(struct frame_entry* frame) {
   ASSERT(frame);
 
   lock_acquire(&frame_table_lock);
 
-  // 클럭 포인터 재설정
+  // 클럭 포인터를 현재 프레임에서 다음 프레임으로 이동 
   if (frame_clock_pointer == &frame->lru_elem) {
     frame_clock_pointer = list_remove(frame_clock_pointer); // 현재 포인터를 제거 후 재설정
   } else {
-    list_remove(&frame->lru_elem);
+    list_remove(&frame->lru_elem);  // 단순히 리스트에서 제거
   }
 
   lock_release(&frame_table_lock);

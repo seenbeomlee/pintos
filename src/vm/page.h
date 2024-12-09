@@ -30,7 +30,10 @@ struct frame_entry {
   void* kernal_addr;           // 물리 주소에 매핑된 프레임 주소
 };
 
-// Supplementary Page Entry 구조체
+
+/** Supplementary Page Entry 구조체 
+ * process.c > load_segment() : create
+ */
 struct spt_entry {
   struct file* mmap_file;   // 가상 주소와 매핑된 파일
   size_t offset;            // 파일에서 읽어야 할 오프셋

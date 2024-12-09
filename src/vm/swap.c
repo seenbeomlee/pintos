@@ -26,16 +26,16 @@ void swap_init(void) {
 	}
 }
 
-void swap_in(size_t swap_index, void *page_addr) {
+void swap_in(size_t swap_index, void *kernal_addr) {
 	if (bitmap_test(swap_map, swap_index) == SWAP_FREE) return;
 
 	lock_acquire(&swap_lock);
-	swap_read_write(swap_index, page_addr, true);  // 데이터 읽기
+	swap_read_write(swap_index, kernal_addr, true);  // 데이터 읽기
 	bitmap_flip(swap_map, swap_index);  // 슬롯 플립
 	lock_release(&swap_lock);
 }
 
-size_t swap_out(void *page_addr) {
+size_t swap_out(void *kernal_addr) {
 	lock_acquire(&swap_lock);
 
 	size_t free_index = bitmap_scan_and_flip(swap_map, 0, 1, SWAP_FREE);
@@ -44,7 +44,7 @@ size_t swap_out(void *page_addr) {
 		return BITMAP_ERROR;
 	}
 
-	swap_read_write(free_index, page_addr, false);  // 데이터 쓰기
+	swap_read_write(free_index, kernal_addr, false);  // 데이터 쓰기
 	lock_release(&swap_lock);
 
 	return free_index;

@@ -499,7 +499,7 @@ static void handle_page_removal(struct spt_entry *entry, uint32_t *pagedir) {
     ASSERT(pagedir != NULL);
 
     // spt 엔트리의 가장 주소(entry->virtual_addr)에 매핑된 물리 메모리 주소를 가져온다.
-    void *kaddr = pagedir_get_page(pagedir, entry->virtual_addr);
+    void *kernal_addr = pagedir_get_page(pagedir, entry->virtual_addr);
 
     // Dirty 페이지인 경우 디스크에 기록
     if (pagedir_is_dirty(pagedir, entry->virtual_addr)) {
@@ -511,8 +511,8 @@ static void handle_page_removal(struct spt_entry *entry, uint32_t *pagedir) {
     // 페이지 테이블에서 제거 및 메모리 해제, 즉 페이지 테이블에서 '가상 주소와 물리 주소의 매핑을 제거'한다.
     // 이후 해당 가상 주소로 접근하려고 하면, 매핑이 해제되었기 때문에 당연히 page fault가 발생한다.
     pagedir_clear_page(pagedir, entry->virtual_addr);
-    // 받아 온 물리 메모리 주소(kaddr)를 통해 '물리 메모리를 실제로 해제'하여 다른 작업에서 재사용할 수 있도록 만든다.
-    free_page(kaddr);
+    // 받아 온 물리 메모리 주소(kernal_addr)를 통해 '물리 메모리를 실제로 해제'하여 다른 작업에서 재사용할 수 있도록 만든다.
+    free_frame(kernal_addr);
 }
 
 /** 2
