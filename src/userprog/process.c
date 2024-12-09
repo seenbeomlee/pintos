@@ -622,9 +622,9 @@ setup_stack(void **esp) // 사용자 프로그램 실행을 위한 esp (stack po
     }
 
     /* 사용자 가상 메모리와 물리 페이지 매핑 */
-    is_successful = install_page((uint8_t *)PHYS_BASE - PGSIZE, frame->frame_addr, true);
+    is_successful = install_page((uint8_t *)PHYS_BASE - PGSIZE, frame->kernal_addr, true);
     if (!is_successful) {
-        free_page(frame->frame_addr); // 매핑 실패 시 물리 메모리 해제
+        free_page(frame->kernal_addr); // 매핑 실패 시 물리 메모리 해제
         return false;
     }
 
@@ -633,7 +633,7 @@ setup_stack(void **esp) // 사용자 프로그램 실행을 위한 esp (stack po
     /* SPT 엔트리 초기화 및 추가 */
     frame->spt_entry = initialize_spt_entry((uint8_t *)PHYS_BASE - PGSIZE, true); // SPT 엔트리 생성 및 초기화
     if (frame->spt_entry == NULL) {
-        free_page(frame->frame_addr); // SPT 초기화 실패 시 물리 메모리 해제
+        free_page(frame->kernal_addr); // SPT 초기화 실패 시 물리 메모리 해제
         return false;
     }
 

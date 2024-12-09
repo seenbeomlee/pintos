@@ -27,7 +27,7 @@ struct frame_entry {
   struct thread* owner_thread; // 이 프레임과 연관된 스레드
   struct list_elem lru_elem;  // LRU 리스트 탐색을 위한 리스트 요소
 
-  void* frame_addr;           // 물리 주소에 매핑된 프레임 주소
+  void* kernal_addr;           // 물리 주소에 매핑된 프레임 주소
 };
 
 // Supplementary Page Entry 구조체

@@ -48,7 +48,7 @@ struct frame_entry* allocate_frame(enum palloc_flags flags) {
   struct frame_entry* new_frame = create_frame(flags);
   if (!new_frame) return NULL;
 
-  if (!new_frame->frame_addr) {
+  if (!new_frame->kernal_addr) {
     resolve_memory_shortage(flags, new_frame);  // 메모리 부족 시 처리
   }
   return new_frame;
@@ -60,7 +60,7 @@ static struct frame_entry* create_frame(enum palloc_flags flags) {
   if (frame != NULL) {
     memset(frame, 0, sizeof(struct frame_entry));
     frame->owner_thread = thread_current();
-    frame->frame_addr = palloc_get_page(flags);
+    frame->kernal_addr = palloc_get_page(flags);
   }
   return frame;
 }
@@ -68,18 +68,22 @@ static struct frame_entry* create_frame(enum palloc_flags flags) {
 // 메모리 부족 처리 로직
 static void resolve_memory_shortage(enum palloc_flags flags, struct frame_entry* frame) {
     evict_frame();  // LRU 알고리즘 기반 페이지 해제
-    frame->frame_addr = palloc_get_page(flags);
-    ASSERT(frame->frame_addr != NULL);
+    frame->kernal_addr = palloc_get_page(flags);
+    ASSERT(frame->kernal_addr != NULL);
 }
+
+/* ********** ********** ********** ********** ********** ********** ********** ********** */
 
 void add_frame_to_lru(struct frame_entry* new_frame) {
   ASSERT(new_frame);
-  ASSERT(pg_ofs(new_frame->frame_addr) == 0); // 페이지 정렬 확인
+  ASSERT(pg_ofs(new_frame->kernal_addr) == 0); // 페이지 정렬 확인
 
   lock_acquire(&frame_table_lock);  // 락 획득
   list_push_back(&frame_table, &new_frame->lru_elem); // 리스트 뒤에 추가
   lock_release(&frame_table_lock);  // 락 해제
 }
+
+/* ********** ********** ********** ********** ********** ********** ********** ********** */
 
 // 커널 주소를 기반으로 페이지 프레임을 검색
 static struct frame_entry* find_frame_by_kaddr(void* kernel_addr) {
@@ -108,8 +112,10 @@ static struct frame_entry* find_frame(bool (*condition)(struct frame_entry*, voi
 
 // 커널 주소가 일치하는지 확인하는 조건 함수
 static bool is_kaddr_match(struct frame_entry* frame, void* kernel_addr) {
-  return frame->frame_addr == kernel_addr;  // 프레임의 커널 주소가 주어진 주소와 동일한지 확인
+  return frame->kernal_addr == kernel_addr;  // 프레임의 커널 주소가 주어진 주소와 동일한지 확인
 }
+
+/* ********** ********** ********** ********** ********** ********** ********** ********** */
 
 // LRU 알고리즘을 사용해 메모리 부족 시 페이지를 해제
 static void evict_frame(void) {
@@ -145,12 +151,12 @@ static bool process_eviction(struct frame_entry* frame) {
     if (frame->spt_entry->entry_type == VM_FILE) { // 파일 기반 페이지의 경우 처리
       // 파일 페이지는 디스크로 다시 기록
       lock_acquire(&filesys_lock);
-      file_write_at(frame->spt_entry->mmap_file, frame->frame_addr, frame->spt_entry->read_bytes, frame->spt_entry->offset);
+      file_write_at(frame->spt_entry->mmap_file, frame->kernal_addr, frame->spt_entry->read_bytes, frame->spt_entry->offset);
       lock_release(&filesys_lock);
     } else { // 익명 페이지의 경우 처리
       // 익명 페이지는 스왑 슬롯으로 기록
       frame->spt_entry->entry_type = VM_ANON;
-      frame->spt_entry->swap_index = swap_out(frame->frame_addr);
+      frame->spt_entry->swap_index = swap_out(frame->kernal_addr);
     }
 
     // 페이지 상태 갱신
@@ -186,7 +192,7 @@ void free_page(void* kernel_addr) {
 // 페이지 메모리와 관련 리소스를 해제하는 내부 함수
 static void release_frame(struct frame_entry* frame) {
   remove_frame_from_lru(frame);      // LRU 리스트에서 제거
-  palloc_free_page(frame->frame_addr);   // 물리 메모리 해제
+  palloc_free_page(frame->kernal_addr);   // 물리 메모리 해제
   free(frame);                      // 페이지 구조체 메모리 해제
 }
 
