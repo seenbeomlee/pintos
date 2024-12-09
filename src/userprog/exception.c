@@ -11,18 +11,6 @@ static long long page_fault_cnt;
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
 
-// 스택 확장 검증
-static bool validate_stack_growth(void* access_addr, void* current_esp);
-
-// Supplementary Page Table Entry 초기화
-static void initialize_spt_entry(struct spt_entry* entry, void* aligned_addr, struct frame_entry* frame);
-
-/** 
- * 페이지 폴트 발생 시, 스택 확장이 필요한 경우 호출.
- * 새로운 스택 페이지를 생성하고, 이를 SPT와 연결.
- */
-static bool grow_user_stack(void* target_addr);
-
 /**
  * 페이지 폴트의 일반적인 처리 루틴.
  * SPT 엔트리를 기반으로 페이지를 적재하거나 복구.
@@ -35,6 +23,18 @@ static bool resolve_page_fault(struct spt_entry* entry);
  * resolve_page_fault에서 호출되어, 실제 페이지 데이터를 메모리에 적재.
  */
 static bool process_page_type(struct spt_entry* entry, struct frame_entry* frame);
+
+// 스택 확장 검증
+static bool validate_stack_growth(void* access_addr, void* current_esp); 
+
+/** 
+ * 페이지 폴트 발생 시, 스택 확장이 필요한 경우 호출.
+ * 새로운 스택 페이지를 생성하고, 이를 SPT와 연결.
+ */
+static bool grow_user_stack(void* target_addr);
+
+// Supplementary Page Table Entry 초기화
+static void initialize_spt_entry(struct spt_entry* entry, void* aligned_addr, struct frame_entry* frame);
 
 
 /* Registers handlers for interrupts that can be caused by user
@@ -203,71 +203,6 @@ page_fault (struct intr_frame *f)
     }
 }
 
-static bool validate_stack_growth(void* access_addr, void* current_esp) {
-    // 접근 주소가 사용자 주소인지 확인
-    if (!is_user_vaddr(access_addr)) {
-        return false;
-    }
-
-    // 스택 크기 제한 확인
-    if (access_addr < MAX_STACK_LIMIT) {
-        return false;
-    }
-
-    // esp와 fault_addr 간 거리 확인
-    uintptr_t distance = (uintptr_t)current_esp - (uintptr_t)access_addr;
-    if (distance > 32) {
-        return false;
-    }
-
-    // 모든 조건 만족 시, 스택 확장이 가능하므로 true를 반환
-    return true;
-}
-
-static void initialize_spt_entry(struct spt_entry* entry, void* aligned_addr, struct frame_entry* frame) {
-    ASSERT(entry != NULL);
-    ASSERT(frame != NULL);
-
-    entry->entry_type = VM_ANON;
-    entry->is_writable = true;
-    entry->is_loaded = true;
-    entry->virtual_addr = aligned_addr;
-    frame->spt_entry = entry;
-}
-
-// 사용자 스택 확장 처리, (1)프레임 할당
-static bool grow_user_stack(void* target_addr) {
-  void* aligned_addr = pg_round_down(target_addr); // 대상 주소를 페이지 단위로 정렬
-  struct frame_entry* new_frame = allocate_frame(PAL_USER | PAL_ZERO); // 사용자 페이지를 위한 물리 메모리 할당
-  struct spt_entry* new_entry = malloc(sizeof(struct spt_entry)); // SPT 엔트리 생성
-
-  if (!new_frame || !new_entry) { // 메모리 할당 실패 처리
-    if (new_frame) free_frame(new_frame->kernal_addr);
-    if (new_entry) free(new_entry);
-    return false;
-  }
-
-  // 프레임을 성공적으로 할당한 후, 물리 메모리와 가상 주소 매핑
-  if (!install_page(aligned_addr, new_frame->kernal_addr, true)) { // 페이지 매핑 실패 처리
-    free_frame(new_frame->kernal_addr);
-    free(new_entry);
-    return false;
-  }
-
-  /**
-   * 스택 확장(stack growth)은 가상 메모리의 특정 주소를 기준으로 새로운 페이지를 추가하는 작업이다.
-   * 1. 새로 할당된 페이지의 정보를 spt_entry로 초기화한 후, 
-   * 2. insert_spt_entry를 호출하여 spt에 등록한다.
-   * 이를 통해 스택 확장된 메모리도 프로세스의 메모리 관리 영역(spt)에 포함되어 관리된다.
-   */
-  initialize_spt_entry(new_entry, aligned_addr, new_frame); // 1. SPT 엔트리 초기화
-  insert_spt_entry(&(thread_current()->spt), new_entry); // 2. SPT에 엔트리 추가
-
-  add_frame_to_lru(new_frame); // 프레임을 LRU 리스트에 추가
-
-  return true; // 스택 확장 성공
-}
-
 // 페이지 폴트 처리 루틴 : spt에 엔트리가 있다면, 파일 데이터 로드 & 스왑에서 복구 등 페이지 적재를 처리, (2)프레임 할당
 static bool resolve_page_fault(struct spt_entry* entry) {
   struct frame_entry* new_frame = allocate_frame(PAL_USER); // 사용자 페이지를 위한 프레임 할당
@@ -320,4 +255,71 @@ static bool process_page_type(struct spt_entry* entry, struct frame_entry* frame
   }
 
   return true; // 페이지 처리 성공
+}
+
+static bool validate_stack_growth(void* access_addr, void* current_esp) {
+    // 접근 주소가 사용자 주소인지 확인
+    if (!is_user_vaddr(access_addr)) {
+        return false;
+    }
+
+    // 스택 크기 제한 확인
+    if (access_addr < MAX_STACK_LIMIT) {
+        return false;
+    }
+
+    // esp와 fault_addr 간 거리 확인
+    uintptr_t distance = (uintptr_t)current_esp - (uintptr_t)access_addr;
+    if (distance > 32) {
+        return false;
+    }
+
+    // 모든 조건 만족 시, 스택 확장이 가능하므로 true를 반환
+    return true;
+}
+
+// 사용자 스택 확장 처리, (1)프레임 할당
+static bool grow_user_stack(void* target_addr) {
+  void* aligned_addr = pg_round_down(target_addr); // 대상 주소를 페이지 단위로 정렬
+
+  struct frame_entry* new_frame = allocate_frame(PAL_USER | PAL_ZERO); // 사용자 페이지를 위한 물리 메모리 할당
+  
+  struct spt_entry* new_entry = malloc(sizeof(struct spt_entry)); // SPT 엔트리 생성
+
+  if (!new_frame || !new_entry) { // 메모리 할당 실패 처리
+    if (new_frame) free_frame(new_frame->kernal_addr);
+    if (new_entry) free(new_entry);
+    return false;
+  }
+
+  // 프레임을 성공적으로 할당한 후, 물리 메모리와 가상 주소 매핑
+  if (!install_page(aligned_addr, new_frame->kernal_addr, true)) { // 페이지 매핑 실패 처리
+    free_frame(new_frame->kernal_addr);
+    free(new_entry);
+    return false;
+  }
+
+  /**
+   * 스택 확장(stack growth)은 가상 메모리의 특정 주소를 기준으로 새로운 페이지를 추가하는 작업이다.
+   * 1. 새로 할당된 페이지의 정보를 spt_entry로 초기화한 후, 
+   * 2. insert_spt_entry를 호출하여 spt에 등록한다.
+   * 이를 통해 스택 확장된 메모리도 프로세스의 메모리 관리 영역(spt)에 포함되어 관리된다.
+   */
+  initialize_spt_entry(new_entry, aligned_addr, new_frame); // 1. SPT 엔트리 초기화
+  insert_spt_entry(&(thread_current()->spt), new_entry); // 2. SPT에 엔트리 추가
+
+  add_frame_to_lru(new_frame); // 프레임을 LRU 리스트에 추가
+
+  return true; // 스택 확장 성공
+}
+
+static void initialize_spt_entry(struct spt_entry* entry, void* aligned_addr, struct frame_entry* frame) {
+    ASSERT(entry != NULL);
+    ASSERT(frame != NULL);
+
+    entry->entry_type = VM_ANON;
+    entry->is_writable = true;
+    entry->is_loaded = true;
+    entry->virtual_addr = aligned_addr;
+    frame->spt_entry = entry;
 }
