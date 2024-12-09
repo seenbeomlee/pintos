@@ -182,19 +182,22 @@ page_fault (struct intr_frame *f)
         exit(-1);
     }
 
+/* ********** ********** ********** ********** lazy loading(lazy_loading) ********** ********** ********** ********** */
+// page_fault()는 load_segment()를 통해 초기화된 정보를 통해 lazy loading을 실행한다. (즉, spt_entry가 있는 경우)
+
     // spt에서 엔트리 검색
     struct spt_entry* entry = lookup_spt_entry(fault_addr);
-    if (entry == NULL) { // spt 엔트리가 없는 경우의 페이지 폴트 처리
+    if (entry == NULL) { // spt 엔트리가 없는 경우는 비정상적이므로 stack_growth()를 시도한다.
         if (!validate_stack_growth(fault_addr, f->esp)) { // 스택 확장이 가능한지 '논리적' 확인
             exit(-1); // 스택 확장이 불가능하면 종료
         }
-        if (!grow_user_stack(fault_addr)) { // 실제로 스택 확장을 진행한다.
+        if (!grow_user_stack(fault_addr)) { // 스택 확장이 가능하다면 '실제로' 진행한다.
             exit(-1); // 스택 확장이 논리적으로 가능하나, 실제로는 불가능한 경우 종료
         }
         return;
     }
 
-    if (!resolve_page_fault(entry)) { // spt 엔트리가 있는 경우의 페이지 폴트 처리
+    if (!resolve_page_fault(entry)) { // spt 엔트리가 있는 경우는 lazy_loading이나 swapping이 가능한 경우이다.
         printf("Page fault resolution failed.\n");
         exit(-1);
     }

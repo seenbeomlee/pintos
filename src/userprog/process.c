@@ -552,6 +552,10 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage, // load_segment는 �
     size_t chunk_to_read = read_bytes < PGSIZE ? read_bytes : PGSIZE; // 현재 페이지에서 읽을 데이터 크기
     size_t chunk_to_zero = PGSIZE - chunk_to_read;                   // 남은 바이트를 0으로 초기화할 크기
     
+/* ********** ********** ********** ********** lazy loading(lazy_loading) ********** ********** ********** ********** */
+// load_segment()는 create_spt_entry를 통해 spt_entry를 생성하고,
+// 이는 insert_spt_entry를 통해 현재 스레드에 넣음으로써 lazy loading의 초기화 부분을 담당한다.
+
     struct spt_entry *new_entry = create_spt_entry(reopened_file, ofs, upage, chunk_to_read, chunk_to_zero, writable);
     if (!new_entry) {
       return false; // SPT 엔트리 생성 실패 시 false 반환
