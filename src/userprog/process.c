@@ -20,6 +20,14 @@
 
 #include "devices/timer.h"
 
+#include "vm/frame.h"
+#include "vm/page.h"
+#include "vm/swap.h"
+#include "userprog/syscall.h"
+#include <stdlib.h>
+
+extern struct lock filesys_lock;
+
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
@@ -88,6 +96,14 @@ start_process (void *file_name_)
   char *file_name = file_name_; // f_name은 문자열인데 위에서 (void *)로 넘겨받음! -> 문자열로 인식하기 위해서 char* 로 변환해줘야한다.
   struct intr_frame if_;
   bool success;
+
+  /**
+   * 프로세스가 사용하는 가상 메모리 구조를 초기화하기 위해서 호출한다.
+   * Supplemental Page Table(SPT)은 각 process가 별도로 관리해야 하므로, 
+   * start_process()가 호출될 때 현재 process의 spt를 초기화한다.
+   * 이를 통해 프로세스 간 가상 메모리 충돌을 방지하고 독립적ㅇ니 메모리 관리를 보장한다.
+   */
+  spt_init(&thread_current()->spt);
 
   int size = strlen(file_name);
   char* parsed_fn[size + 1]; // 왜냐하면, size는 문자열의 길이이므로 '\0'을 삽입하기 위해서는 +1을 해주어야 한다.
@@ -338,6 +354,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
+  lock_acquire(&filesys_lock);
   file = filesys_open (file_name);
   if (file == NULL) 
     {
@@ -440,12 +457,11 @@ load (const char *file_name, void (**eip) (void), void **esp)
    * 즉, 이 부분을 주석 처리하지 않으면 기껏 deny 해두었던 기능이 load() 내에서 다시 allow 된다. 
    */
   // file_close (file);
+  lock_release(&filesys_lock);
   return success;
 }
 
 /* load() helpers. */
-
-static bool install_page (void *upage, void *kpage, bool writable);
 
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
@@ -530,6 +546,12 @@ static struct spt_entry* create_spt_entry(struct file *file, off_t offset, uint8
 
    Return true if successful, false if a memory allocation error
    or disk read error occurs. */
+
+/** project3 : virtual memory
+ * 이전 코드는 페이지를 즉시 메모리에 로드하고 매핑했지만,
+ * 변경된 코드는 지연 로딩(lazy loading) 방식을 도입하여,
+ * 페이지를 실제 접근 시점에서 메모리에 로드하도록 구현한다.
+ */
 static bool
 load_segment(struct file *file, off_t ofs, uint8_t *upage, // load_segment는 실행 파일의 특정 세그먼트를 물리 메모리에 로드하는 작업
              uint32_t read_bytes, uint32_t zero_bytes, bool writable)
@@ -656,7 +678,7 @@ setup_stack(void **esp) // 사용자 프로그램 실행을 위한 esp (stack po
    with palloc_get_page().
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
-static bool
+bool
 install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *curr = thread_current ();

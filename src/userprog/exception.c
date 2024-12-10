@@ -153,29 +153,25 @@ kill (struct intr_frame *f)
    can find more information about both of these in the
    description of "Interrupt 14--Page Fault Exception (#PF)" in
    [IA32-v3a] section 5.15 "Exception and Interrupt Reference". */
-static void
-page_fault (struct intr_frame *f) 
-{
-  bool not_present;  /* True: not-present page, false: writing r/o page. */
-  bool write;        /* True: access was write, false: access was read. */
-  bool user;         /* True: access by user, false: access by kernel. */
-  void *fault_addr;  /* Fault address. */
+static void page_fault(struct intr_frame *f) {
+    bool not_present;  
+    bool write;        
+    bool user;         
+    void *fault_addr;  
 
-  /* Obtain faulting address, the virtual address that was
-     accessed to cause the fault.  It may point to code or to
-     data.  It is not necessarily the address of the instruction
-     that caused the fault (that's f->eip).
-     See [IA32-v2a] "MOV--Move to/from Control Registers" and
-     [IA32-v3a] 5.15 "Interrupt 14--Page Fault Exception
-     (#PF)". */
-  asm ("movl %%cr2, %0" : "=r" (fault_addr));
+    /* Obtain faulting address, the virtual address that was
+      accessed to cause the fault.  It may point to code or to
+      data.  It is not necessarily the address of the instruction
+      that caused the fault (that's f->eip).
+      See [IA32-v2a] "MOV--Move to/from Control Registers" and
+      [IA32-v3a] 5.15 "Interrupt 14--Page Fault Exception
+      (#PF)". */
+    asm ("movl %%cr2, %0" : "=r" (fault_addr));
 
-  /* Turn interrupts back on (they were only off so that we could
-     be assured of reading CR2 before it changed). */
-  intr_enable ();
-
-  /* Count page faults. */
-  page_fault_cnt++;
+    /* Turn interrupts back on (they were only off so that we could
+    be assured of reading CR2 before it changed). */
+    intr_enable();
+    page_fault_cnt++;
 
     // 페이지 폴트 원인 확인
     not_present = (f->error_code & PF_P) == 0; // 페이지가 메모리에 없어서 발생

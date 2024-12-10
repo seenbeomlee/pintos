@@ -1,10 +1,16 @@
 #include "userprog/syscall.h"
 #include <stdio.h>
 #include <syscall-nr.h>
+#include <string.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "filesys/file.h"
 #include "threads/vaddr.h"
+#include "vm/page.h"
+#include "vm/frame.h"
+#include "userprog/pagedir.h"
+#include <list.h>
+#include "threads/malloc.h"
 
 static void syscall_handler (struct intr_frame *);
 
@@ -49,45 +55,34 @@ syscall_handler (struct intr_frame *f)
     break;
     case SYS_EXIT:                   /* Terminate this process. */
     check_address(f->esp+4);
-    check_address(f->esp+4);
     exit(*(int*)(f->esp+4));
     break;
     case SYS_EXEC:                   /* Start another process. */
     check_address(f->esp+4);
-    check_address(f->esp+4);
     f->eax=exec((char*)*(uint32_t*)(f->esp+4));
     break;
     case SYS_WAIT:                   /* Wait for a child process to die. */
-    check_address(f->esp+4);
     check_address(f->esp+4);
     f->eax = wait(*(uint32_t*)(f->esp+4));
     break;
     case SYS_CREATE:                 /* Create a file. */
     check_address(f->esp+4);
     check_address(f->esp+8);
-    check_address(f->esp+4);
-    check_address(f->esp+8);
     f->eax = create((char*)*(uint32_t*)(f->esp+4), *(uint32_t*)(f->esp+8));
     break;
     case SYS_REMOVE:                 /* Delete a file. */
-    check_address(f->esp+4);
     check_address(f->esp+4);
     f->eax = remove((char*)*(uint32_t*)(f->esp+4));
     break;
     case SYS_OPEN:                   /* Open a file. */
     check_address(f->esp+4);
-    check_address(f->esp+4);
     f->eax = open((char*)*(uint32_t*)(f->esp+4));
     break;
     case SYS_FILESIZE:               /* Obtain a file's size. */
     check_address(f->esp+4);
-    check_address(f->esp+4);
     f->eax = filesize(*(uint32_t*)(f->esp+4));
     break;
     case SYS_READ:                   /* Read from a file. */
-    check_address(f->esp+4);
-    check_address(f->esp+8);
-    check_address(f->esp+12);
     check_address(f->esp+4);
     check_address(f->esp+8);
     check_address(f->esp+12);
@@ -99,26 +94,19 @@ syscall_handler (struct intr_frame *f)
     check_address(f->esp+4);
     check_address(f->esp+8);
     check_address(f->esp+12);
-    check_address(f->esp+4);
-    check_address(f->esp+8);
-    check_address(f->esp+12);
     f->eax = write((int)*(uint32_t*)(f->esp+4), (const void*)*(uint32_t*)(f->esp+8),
 					(unsigned)*(uint32_t*)(f->esp+12));
     break;
     case SYS_SEEK:                   /* Change position in a file. */
     check_address(f->esp+4);
     check_address(f->esp+8);
-    check_address(f->esp+4);
-    check_address(f->esp+8);
     seek((int)*(uint32_t*)(f->esp+4), (unsigned)*(uint32_t*)(f->esp+8));
     break;
     case SYS_TELL:                   /* Report current position in a file. */
     check_address(f->esp+4);
-    check_address(f->esp+4);
     f->eax = tell((int)*(uint32_t*)(f->esp+4));
     break;
     case SYS_CLOSE:                  /* Close a file. */
-    check_address(f->esp+4);
     check_address(f->esp+4);
     close(*(uint32_t*)(f->esp+4));
     break;
@@ -224,7 +212,11 @@ create (const char *file, unsigned initial_size)
   if(file==NULL){
     exit(-1);
   }
-  return filesys_create(file, initial_size);
+  lock_acquire(&filesys_lock);
+  bool success = filesys_create(file, initial_size);
+  lock_release(&filesys_lock);
+
+  return success;
 }
 
 bool 
@@ -234,7 +226,11 @@ remove (const char *file)
   if(file==NULL){
     exit(-1);
   }
-  return filesys_remove(file);
+  lock_acquire(&filesys_lock);
+  bool success = filesys_remove(file);
+  lock_release(&filesys_lock);
+
+  return success;
 }
 
 int 
