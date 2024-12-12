@@ -11,7 +11,10 @@
 #include "vm/frame.h"
 #include "threads/palloc.h"
 
-#define MAX_STACK_SIZE 0xBF800000
+// 스택 확장이 가능한 최하단 주소를 의미한다.
+// 즉, 스택은 PHYS_BASE = 0xC0000000부터 시작해 아래로 확장하며, 확장 가능한 한계는 0xBF800000 까지이다.
+#define STACK_BOTTOM 0xBF800000
+// #define MAX_STACK_SIZE 0xB00000 (8MB)
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -268,7 +271,10 @@ static bool validate_stack_growth(void* access_addr, void* current_esp) {
     }
 
     // 스택 크기 제한 확인
-    if (access_addr < MAX_STACK_SIZE) {
+    // if (PHYS_BASE - access_addr > MAX_STACK_SIZE) {
+    //     return false;
+    // }
+    if (access_addr < STACK_BOTTOM) {
         return false;
     }
 
